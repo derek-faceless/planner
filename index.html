@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Мой планировщик</title>
+    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogItCc0L7QuSDQv9C70LDQvdC40YDQvtCy0YnQuNC6IiwKICAic2hvcnRfbmFtZSI6ICLQn9C70LDQvdC40YDQvtCy0YnQuNC6IiwKICAic3RhcnRfdXJsIjogIi8iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiNmZmZmZmYiLAogICJ0aGVtZV9jb2xvciI6ICIjM2I4MmY2IiwKICAiaWNvbnMiOiBbCiAgICB7CiAgICAgICJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxOTInIGhlaWdodD0nMTkyJyUzRSUzQ3JlY3Qgd2lkdGg9JzE5MicgaGVpZ2h0PScxOTInIGZpbGw9JyUyMzNiODJmNicvJTNFJTNDdGV4dCB4PSc1MCUyNScgeT0nNTAlMjUnIGZvbnQtc2l6ZT0nMTAwJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBkb21pbmFudC1iYXNlbGluZT0nbWlkZGxlJyBmaWxsPSclMjNmZmZmZmYnJTNF8J+ThSUzQy90ZXh0JTNFJTNDL3N2ZyUzRSIsCiAgICAgICJzaXplcyI6ICIxOTJ4MTkyIiwKICAgICAgInR5cGUiOiAiaW1hZ2Uvc3ZnK3htbCIKICAgIH0sCiAgICB7CiAgICAgICJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc1MTInIGhlaWdodD0nNTEyJyUzRSUzQ3JlY3Qgd2lkdGg9JzUxMicgaGVpZ2h0PSc1MTInIGZpbGw9JyUyMzNiODJmNicvJTNFJTNDdGV4dCB4PSc1MCUyNScgeT0nNTAlMjUnIGZvbnQtc2l6ZT0nMzAwJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBkb21pbmFudC1iYXNlbGluZT0nbWlkZGxlJyBmaWxsPSclMjNmZmZmZmYnJTNF8J+ThSUzQy90ZXh0JTNFJTNDL3N2ZyUzRSIsCiAgICAgICJzaXplcyI6ICI1MTJ4NTEyIiwKICAgICAgInR5cGUiOiAiaW1hZ2Uvc3ZnK3htbCIKICAgIH0KICBdCn0=">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: touch;
+        }
+        .mobile-tap {
+            -webkit-tap-highlight-color: transparent;
+        }
+        @media (display-mode: standalone) {
+            body {
+                padding-top: env(safe-area-inset-top);
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+        }
+        .icon-calendar::before { content: '📅'; }
+        .icon-dumbbell::before { content: '🏋️'; }
+        .icon-briefcase::before { content: '💼'; }
+        .icon-home::before { content: '🏠'; }
+        .icon-book::before { content: '📚'; }
+        .icon-moon::before { content: '🌙'; }
+        .icon-pill::before { content: '💊'; }
+        .icon-check::before { content: '✓'; }
+        .icon-plus::before { content: '+'; }
+        .icon-clock::before { content: '🕐'; }
+        .icon-trend::before { content: '📊'; }
+        .icon-alert::before { content: '⚠️'; }
+        .icon-chevron-up::before { content: '▲'; }
+        .icon-chevron-down::before { content: '▼'; }
+            button { min-height: 44px; }
+    </style>
+</head>
+<body class="bg-gray-50 overflow-x-hidden">
+    <div id="app"></div>
+
+    <script>
+        // Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('data:application/javascript;base64,' + btoa(`
+                const CACHE_NAME = 'planner-v1';
+                self.addEventListener('install', (e) => { self.skipWaiting(); });
+                self.addEventListener('fetch', (e) => {
+                    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+                });
+            `)).catch(err => console.log('SW failed'));
+        }
+
+        const storage = {
+            get: (key) => {
+                try { return JSON.parse(localStorage.getItem(key)); } 
+                catch { return null; }
+            },
+            set: (key, value) => localStorage.setItem(key, JSON.stringify(value))
+        };
+
+        class ScheduleApp {
+            constructor() {
+                this.state = this.state || {};
+                this.state.mobileDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+
+                this.state = {
+                    currentWeek: 0,
+                    schedule: storage.get('schedule') || {
+                        0: { work: true, gym: true, repair: true },
+                        1: { work: false, gym: false, repair: true },
+                        2: { work: true, gym: true, repair: true },
+                        3: { work: false, gym: false, repair: true },
+                        4: { work: true, gym: true, repair: true },
+                        5: { work: false, gym: false, repair: true },
+                        6: { work: false, gym: true, repair: true }
+                    },
+                    tasks: storage.get('tasks') || {},
+                    notes: storage.get('notes') || {},
+                    completed: storage.get('completed') || {},
+                    customEvents: storage.get('customEvents') || {},
+                    supplementsTaken: storage.get('supplementsTaken') || {},
+                    showStats: true,
+                    showTasks: {},
+                    showSupplementsModal: false
+                };
+                this.supplementsConfig = storage.get('supplementsConfig') || [
+                    { id: 1, name: 'Аминокислоты', icon: '💊', timing: 'wake', active: true },
+                    { id: 2, name: 'Креатин (утро)', icon: '💊', timing: 'wake', active: true },
+                    { id: 3, name: 'Мульти-Витамины', icon: '🌟', timing: 'breakfast', active: true },
+                    { id: 4, name: 'Омега 3', icon: '🐟', timing: 'breakfast', active: true },
+                    { id: 5, name: 'Бета-аланин', icon: '⚡', timing: 'pre-gym', gymOnly: true, active: true },
+                    { id: 6, name: 'Цитрулин', icon: '⚡', timing: 'pre-gym', gymOnly: true, active: true },
+                    { id: 7, name: 'Креатин (после зала)', icon: '💊', timing: 'post-gym', gymOnly: true, active: true },
+                    { id: 8, name: 'Гейнер (опц.)', icon: '🥤', timing: 'post-gym', gymOnly: true, optional: true, active: true },
+                    { id: 9, name: 'Габа', icon: '😴', timing: 'sleep', active: true },
+                    { id: 10, name: 'B-комплекс', icon: '💊', timing: 'sleep', active: true }
+                ];
+            }
+
+            saveState() {
+                storage.set('schedule', this.state.schedule);
+                storage.set('tasks', this.state.tasks);
+                storage.set('notes', this.state.notes);
+                storage.set('completed', this.state.completed);
+                storage.set('customEvents', this.state.customEvents);
+                storage.set('supplementsTaken', this.state.supplementsTaken);
+                storage.set('supplementsConfig', this.supplementsConfig);
+            }
+
+            getWeekDays(weekOffset) {
+                const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+                const today = new Date();
+                const monday = new Date(today);
+                monday.setDate(today.getDate() - today.getDay() + 1 + (weekOffset * 7));
+                
+                return days.map((day, index) => {
+                    const date = new Date(monday);
+                    date.setDate(monday.getDate() + index);
+                    return {
+                        day,
+                        date: \`\${date.getDate()}.\${date.getMonth() + 1}\`,
+                        fullDate: date.toISOString().split('T')[0]
+                    };
+                });
+            }
+
+            getTimeSlots(dayIndex, isWorkDay, isGymDay, isRepairDay) {
+                const slots = [];
+                
+                if (isWorkDay) {
+                    slots.push(
+                        { time: '06:00-06:20', activity: 'Подъем', icon: '🌙', color: 'bg-blue-100', id: 'wake', supplements: ['Аминокислоты', 'Креатин'] },
+                        { time: '06:20-06:30', activity: 'Сборы', icon: '🏠', color: 'bg-blue-100', id: 'prepare' },
+                        { time: '06:30-07:00', activity: 'Дорога на работу', icon: '💼', color: 'bg-orange-100', id: 'commute-work' },
+                        { time: '07:00-15:00', activity: 'Работа', icon: '💼', color: 'bg-orange-200', id: 'work', supplements: ['Мульти-Витамины', 'Омега 3'] },
+                        { time: '15:00-15:30', activity: 'Дорога домой', icon: '💼', color: 'bg-orange-100', id: 'commute-home' },
+                        { time: '15:30-16:00', activity: 'Обед/отдых', icon: '🏠', color: 'bg-green-100', id: 'lunch' }
+                    );
+                    
+                    if (isRepairDay) {
+                        slots.push({ time: '16:00-19:00', activity: 'Ремонт (3 часа)', icon: '🏠', color: 'bg-yellow-200', id: 'repair' });
+                    } else {
+                        slots.push({ time: '16:00-19:00', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free-afternoon' });
+                    }
+                } else {
+                    slots.push(
+                        { time: '06:00-09:00', activity: 'Сон (доп. 3 часа)', icon: '🌙', color: 'bg-indigo-100', id: 'extra-sleep' },
+                        { time: '09:00-09:30', activity: 'Подъем и сборы', icon: '🌙', color: 'bg-blue-100', id: 'wake', supplements: ['Аминокислоты', 'Креатин'] },
+                        { time: '09:30-10:30', activity: 'Завтрак/отдых', icon: '🏠', color: 'bg-green-100', id: 'breakfast', supplements: ['Мульти-Витамины', 'Омега 3'] }
+                    );
+                    
+                    if (isRepairDay) {
+                        slots.push(
+                            { time: '10:30-13:30', activity: 'Ремонт (3 часа)', icon: '🏠', color: 'bg-yellow-200', id: 'repair-1' },
+                            { time: '13:30-14:30', activity: 'Обед', icon: '🏠', color: 'bg-green-100', id: 'lunch' },
+                            { time: '14:30-18:30', activity: 'Ремонт (4 часа)', icon: '🏠', color: 'bg-yellow-200', id: 'repair-2' }
+                        );
+                    } else {
+                        slots.push(
+                            { time: '10:30-13:30', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free-morning' },
+                            { time: '13:30-14:30', activity: 'Обед', icon: '🏠', color: 'bg-green-100', id: 'lunch' },
+                            { time: '14:30-18:30', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free-afternoon' }
+                        );
+                    }
+                }
+
+                if (isGymDay) {
+                    slots.push(
+                        { time: '19:00-19:30', activity: 'Дорога в зал', icon: '🏋️', color: 'bg-red-100', id: 'commute-gym', supplements: ['Бета-аланин', 'Цитрулин'] },
+                        { time: '19:30-21:00', activity: 'Тренировка', icon: '🏋️', color: 'bg-red-200', id: 'gym' },
+                        { time: '21:00-21:30', activity: 'Дорога домой', icon: '🏋️', color: 'bg-red-100', id: 'commute-gym-back', supplements: ['Креатин', 'Гейнер (опц.)'] },
+                        { time: '21:30-22:30', activity: 'Ужин/душ', icon: '🏠', color: 'bg-green-100', id: 'dinner' },
+                        { time: '22:30-23:30', activity: 'Онлайн курс', icon: '📚', color: 'bg-purple-200', id: 'course' },
+                        { time: '23:30-00:00', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free', supplements: ['Габа', 'B-комплекс'] }
+                    );
+                } else {
+                    if (isWorkDay) {
+                        slots.push(
+                            { time: '19:00-20:00', activity: 'Ужин/отдых', icon: '🏠', color: 'bg-green-100', id: 'dinner' },
+                            { time: '20:00-22:00', activity: 'Онлайн курс (2 часа)', icon: '📚', color: 'bg-purple-200', id: 'course' },
+                            { time: '22:00-00:00', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free', supplements: ['Габа', 'B-комплекс'] }
+                        );
+                    } else {
+                        slots.push(
+                            { time: '18:30-19:30', activity: 'Ужин/отдых', icon: '🏠', color: 'bg-green-100', id: 'dinner' },
+                            { time: '19:30-21:30', activity: 'Онлайн курс (2 часа)', icon: '📚', color: 'bg-purple-200', id: 'course' },
+                            { time: '21:30-00:00', activity: 'Свободное время', icon: '🏠', color: 'bg-gray-100', id: 'free', supplements: ['Габа', 'B-комплекс'] }
+                        );
+                    }
+                }
+
+                slots.push({ time: '00:00', activity: 'Сон', icon: '🌙', color: 'bg-indigo-200', id: 'sleep' });
+                return slots;
+            }
+
+            
+            isMobile() {
+                return window.innerWidth < 640;
+            }
+
+            prevDay() {
+                this.state.mobileDay = (this.state.mobileDay + 6) % 7;
+                this.update();
+            }
+
+            nextDay() {
+                this.state.mobileDay = (this.state.mobileDay + 1) % 7;
+                this.update();
+            }
+
+            renderMobileDay(weekDays) {
+                const i = this.state.mobileDay;
+                const day = weekDays[i];
+                const cfg = this.state.schedule[i];
+                const slots = this.getTimeSlots(i, cfg.work, cfg.gym, cfg.repair);
+
+                return `
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <button onclick="app.prevDay()" class="px-3 py-2 bg-gray-200 rounded">←</button>
+                            <div class="text-center">
+                                <div class="text-lg font-bold">${day.day}</div>
+                                <div class="text-sm text-gray-600">${day.date}</div>
+                            </div>
+                            <button onclick="app.nextDay()" class="px-3 py-2 bg-gray-200 rounded">→</button>
+                        </div>
+
+                        <div class="flex gap-2 justify-center">
+                            ${['work','gym','repair'].map(type => `
+                                <button onclick="app.toggle('${type}', ${i})"
+                                    class="px-3 py-1 rounded text-xs
+                                    ${cfg[type] ? 'bg-blue-500 text-white' : 'bg-gray-200'}">
+                                    ${type === 'work' ? 'Работа' : type === 'gym' ? 'Зал' : 'Ремонт'}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <div class="space-y-2">
+                            ${slots.map(slot => `
+                                <div class="p-3 rounded ${slot.color} flex gap-2">
+                                    <div class="text-lg">${slot.icon}</div>
+                                    <div>
+                                        <div class="font-semibold text-sm">${slot.time}</div>
+                                        <div class="text-sm">${slot.activity}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            render() {
+                const weekDays = this.getWeekDays(this.state.currentWeek);
+                
+                return \`
+                    <div class="max-w-7xl mx-auto p-4 sm:p-6 bg-white min-h-screen">
+                        <div class="mb-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 flex items-center gap-2">
+                                    <span class="icon-calendar text-3xl"></span>
+                                    Мой распорядок дня
+                                </h1>
+                                <div class="flex gap-2">
+                                    <button onclick="app.showSupplements()" class="px-3 py-2 sm:px-4 bg-green-500 text-white rounded hover:bg-green-600 flex items-center gap-1 mobile-tap text-sm sm:text-base">
+                                        <span class="icon-pill"></span>
+                                        <span class="hidden sm:inline">Спортпит</span>
+                                    </button>
+                                    <button onclick="app.prevWeek()" class="px-3 py-2 sm:px-4 bg-gray-200 rounded hover:bg-gray-300 mobile-tap text-sm sm:text-base">
+                                        ← <span class="hidden sm:inline">Пред.</span>
+                                    </button>
+                                    <button onclick="app.nextWeek()" class="px-3 py-2 sm:px-4 bg-gray-200 rounded hover:bg-gray-300 mobile-tap text-sm sm:text-base">
+                                        <span class="hidden sm:inline">След.</span> →
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            \${this.renderStats(weekDays)}
+                            \${this.renderWarnings()}
+                            
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6 text-xs sm:text-sm">
+                                <div class="flex items-center gap-2 p-2 sm:p-3 bg-orange-50 rounded">
+                                    <span class="icon-briefcase text-base sm:text-xl text-orange-600"></span>
+                                    <span class="font-medium">Работа (2/2)</span>
+                                </div>
+                                <div class="flex items-center gap-2 p-2 sm:p-3 bg-red-50 rounded">
+                                    <span class="icon-dumbbell text-base sm:text-xl text-red-600"></span>
+                                    <span class="font-medium">Зал (1/1)</span>
+                                </div>
+                                <div class="flex items-center gap-2 p-2 sm:p-3 bg-yellow-50 rounded">
+                                    <span class="icon-home text-base sm:text-xl text-yellow-600"></span>
+                                    <span class="font-medium">Ремонт</span>
+                                </div>
+                                <div class="flex items-center gap-2 p-2 sm:p-3 bg-purple-50 rounded">
+                                    <span class="icon-book text-base sm:text-xl text-purple-600"></span>
+                                    <span class="font-medium">Курс (1-2ч)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        \${this.isMobile() ? this.renderMobileDay(weekDays) : this.renderScheduleTable(weekDays)}
+                        
+                        \${this.state.showSupplementsModal ? this.renderSupplementsModal() : ''}
+                    </div>
+                \`;
+            }
+
+            renderStats(weekDays) {
+                let totalRepair = 0, totalGym = 0, totalCourse = 0, workDays = 0, totalSupp = 0, takenSupp = 0;
+                
+                Object.keys(this.state.schedule).forEach(i => {
+                    const day = this.state.schedule[i];
+                    if (day.work) {
+                        workDays++;
+                        if (day.repair) totalRepair += 3;
+                        totalCourse += day.gym ? 1 : 2;
+                    } else {
+                        if (day.repair) totalRepair += 7;
+                        totalCourse += 2;
+                    }
+                    if (day.gym) totalGym++;
+                });
+
+                weekDays.forEach((day, i) => {
+                    const slots = this.getTimeSlots(i, this.state.schedule[i].work, this.state.schedule[i].gym, this.state.schedule[i].repair);
+                    slots.forEach(slot => {
+                        if (slot.supplements) {
+                            slot.supplements.forEach((_, idx) => {
+                                totalSupp++;
+                                if (this.state.supplementsTaken[\`\${day.fullDate}-\${slot.id}-\${idx}\`]) takenSupp++;
+                            });
+                        }
+                    });
+                });
+
+                const totalTasks = Object.values(this.state.tasks).reduce((sum, dayTasks) => sum + dayTasks.length, 0);
+                const completedTasks = Object.values(this.state.tasks).reduce((sum, dayTasks) => 
+                    sum + dayTasks.filter(t => t.completed).length, 0);
+
+                return \`
+                    <div class="mb-4">
+                        <button onclick="app.toggleStats()" class="flex items-center gap-2 text-base sm:text-lg font-semibold mb-2 hover:text-blue-600 mobile-tap">
+                            <span class="icon-trend"></span>
+                            Статистика недели
+                            <span class="\${this.state.showStats ? 'icon-chevron-up' : 'icon-chevron-down'} text-xs"></span>
+                        </button>
+                        
+                        \${this.state.showStats ? \`
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 text-xs sm:text-sm">
+                                <div class="p-3 sm:p-4 bg-yellow-50 rounded border-2 border-yellow-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-yellow-700">\${totalRepair}ч</div>
+                                    <div class="text-gray-600">Ремонт</div>
+                                </div>
+                                <div class="p-3 sm:p-4 bg-red-50 rounded border-2 border-red-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-red-700">\${totalGym}</div>
+                                    <div class="text-gray-600">Тренировок</div>
+                                </div>
+                                <div class="p-3 sm:p-4 bg-purple-50 rounded border-2 border-purple-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-purple-700">\${totalCourse}ч</div>
+                                    <div class="text-gray-600">Обучение</div>
+                                </div>
+                                <div class="p-3 sm:p-4 bg-orange-50 rounded border-2 border-orange-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-orange-700">\${workDays}</div>
+                                    <div class="text-gray-600">Рабочих дней</div>
+                                </div>
+                                <div class="p-3 sm:p-4 bg-green-50 rounded border-2 border-green-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-green-700">\${completedTasks}/\${totalTasks}</div>
+                                    <div class="text-gray-600">Задачи</div>
+                                </div>
+                                <div class="p-3 sm:p-4 bg-teal-50 rounded border-2 border-teal-200">
+                                    <div class="text-xl sm:text-2xl font-bold text-teal-700">\${takenSupp}/\${totalSupp}</div>
+                                    <div class="text-gray-600">Спортпит</div>
+                                </div>
+                            </div>
+                        \` : ''}
+                    </div>
+                \`;
+            }
+
+            renderWarnings() {
+                const gymCount = Object.values(this.state.schedule).filter(d => d.gym).length;
+                let totalRepair = 0;
+                Object.keys(this.state.schedule).forEach(i => {
+                    const day = this.state.schedule[i];
+                    if (day.repair) totalRepair += day.work ? 3 : 7;
+                });
+                
+                const warnings = [];
+                if (gymCount >= 5) warnings.push('⚠️ Много тренировок - не забывай про восстановление!');
+                if (totalRepair > 35) warnings.push('⚠️ Много ремонта - не забывай отдыхать!');
+                
+                if (warnings.length === 0) return '';
+                
+                return \`
+                    <div class="mb-4 space-y-2">
+                        \${warnings.map(w => \`
+                            <div class="p-3 bg-amber-50 border border-amber-300 rounded flex items-center gap-2 text-sm">
+                                <span class="icon-alert text-amber-600"></span>
+                                <span class="text-amber-800">\${w}</span>
+                            </div>
+                        \`).join('')}
+                    </div>
+                \`;
+            }
+
+            renderScheduleTable(weekDays) {
+                return \`
+                    <div class="overflow-x-auto -mx-2 sm:mx-0">
+                        <table class="w-full border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="border p-2 text-left font-semibold min-w-[80px] sm:min-w-[100px]">Время</th>
+                                    \${weekDays.map((day, i) => \`
+                                        <th class="border p-2 sm:p-3 text-center min-w-[140px] sm:min-w-[160px]">
+                                            <div class="font-bold text-base sm:text-lg">\${day.day}</div>
+                                            <div class="text-xs sm:text-sm text-gray-600">\${day.date}</div>
+                                            <div class="flex flex-wrap gap-1 justify-center mt-2">
+                                                <button onclick="app.toggle('work', \${i})" class="px-2 py-1 text-[10px] sm:text-xs rounded mobile-tap \${this.state.schedule[i].work ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-600'}">
+                                                    Работа
+                                                </button>
+                                                <button onclick="app.toggle('gym', \${i})" class="px-2 py-1 text-[10px] sm:text-xs rounded mobile-tap \${this.state.schedule[i].gym ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}">
+                                                    Зал
+                                                </button>
+                                                <button onclick="app.toggle('repair', \${i})" class="px-2 py-1 text-[10px] sm:text-xs rounded mobile-tap \${this.state.schedule[i].repair ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-600'}">
+                                                    Ремонт
+                                                </button>
+                                            </div>
+                                            <div class="mt-2 flex gap-1 justify-center">
+                                                <button onclick="app.addTask(\${i}, '\${day.fullDate}')" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 mobile-tap" title="Добавить задачу">
+                                                    <span class="icon-plus text-xs"></span>
+                                                </button>
+                                                <button onclick="app.addEvent(\${i}, '\${day.fullDate
