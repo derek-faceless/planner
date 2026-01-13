@@ -25,28 +25,26 @@
     }
   }
   .slot { transition: background .3s, border-left .3s; }
+  .progress-bar-inner { transition: width 0.3s ease; }
 </style>
 </head>
 
 <body class="bg-gray-50 flex flex-col min-h-screen">
-<div id="app" class="flex-1 flex flex-col overflow-hidden"></div>
+<div id="app" class="flex-1 flex flex-col overflow-hidden pb-16"></div>
 
 <script>
-/* ================== STORAGE ================== */
-const storage={
-  get:k=>{try{return JSON.parse(localStorage.getItem(k))}catch{return null}},
-  set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))
+const storage = {
+  get: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set: (k,v) => localStorage.setItem(k, JSON.stringify(v))
 };
 
-/* ================== PLANNER ================== */
-class Planner{
+class Planner {
 constructor(){
   const today=new Date();
   this.days=['ПН','ВТ','СР','ЧТ','ПТ','СБ','ВС'];
-
   this.state={
-    selectedDay:today.getDay()===0?6:today.getDay()-1,
-    schedule:storage.get('schedule')||{
+    selectedDay: today.getDay()===0?6:today.getDay()-1,
+    schedule: storage.get('schedule') || {
       0:{work:true,gym:true,repair:true},
       1:{work:false,gym:false,repair:true},
       2:{work:true,gym:true,repair:true},
@@ -55,8 +53,8 @@ constructor(){
       5:{work:false,gym:false,repair:true},
       6:{work:false,gym:true,repair:true}
     },
-    completed:storage.get('completed')||{},
-    supplements:storage.get('supplements')||{},
+    completed: storage.get('completed') || {},
+    supplements: storage.get('supplements') || {},
     showStats:true
   };
 
@@ -70,7 +68,6 @@ constructor(){
   this.scrollToCurrent();
 }
 
-/* ================== UTILS ================== */
 save(){
   storage.set('schedule',this.state.schedule);
   storage.set('completed',this.state.completed);
@@ -96,14 +93,13 @@ isCurrent(slot){
   let [s,e]=slot.t.split('-').map(this.toMin);
   if(e<=s) e+=1440;
   if(cur<s) cur+=1440;
-  return cur>=s&&cur<e;
+  return cur>=s && cur<e;
 }
 
-/* ================== SLOTS ================== */
+/* ===== getSlots ===== */
 getSlots(dayIndex){
   const {work,gym,repair}=this.state.schedule[dayIndex];
   const s=[];
-
   if(work){
     s.push(
       {t:'06:00-06:20',a:'Подъем',c:'bg-orange-100',id:'wake',supps:['Аминокислоты','Креатин']},
@@ -117,85 +113,134 @@ getSlots(dayIndex){
       ?{t:'16:00-19:00',a:'Ремонт 3ч',c:'bg-yellow-200',id:'repair'}
       :{t:'16:00-19:00',a:'Свободно',c:'bg-gray-100',id:'free1'}
     );
-  }else{
+  } else {
     s.push(
+      {t:'06:00-09:00',a:'Сон +3ч',c:'bg-indigo-100',id:'sleep2'},
       {t:'09:00-09:30',a:'Подъем',c:'bg-indigo-200',id:'wake',supps:['Аминокислоты','Креатин']},
       {t:'09:30-10:30',a:'Завтрак',c:'bg-green-200',id:'breakfast',supps:['Мульти-Витамины','Омега 3']}
     );
-    s.push(repair
-      ?{t:'10:30-13:30',a:'Ремонт 3ч',c:'bg-yellow-200',id:'repair1'}
-      :{t:'10:30-13:30',a:'Свободно',c:'bg-gray-100',id:'free2'}
-    );
-    s.push(
-      {t:'13:30-14:30',a:'Обед',c:'bg-green-100',id:'lunch'}
-    );
-    s.push(repair
-      ?{t:'14:30-18:30',a:'Ремонт 4ч',c:'bg-yellow-300',id:'repair2'}
-      :{t:'14:30-18:30',a:'Свободно',c:'bg-gray-200',id:'free3'}
-    );
+    if(repair){
+      s.push(
+        {t:'10:30-13:30',a:'Ремонт 3ч',c:'bg-yellow-200',id:'repair1'},
+        {t:'13:30-14:30',a:'Обед',c:'bg-green-100',id:'lunch'},
+        {t:'14:30-18:30',a:'Ремонт 4ч',c:'bg-yellow-300',id:'repair2'}
+      );
+    } else {
+      s.push(
+        {t:'10:30-13:30',a:'Свободно',c:'bg-gray-100',id:'free2'},
+        {t:'13:30-14:30',a:'Обед',c:'bg-green-100',id:'lunch'},
+        {t:'14:30-18:30',a:'Свободно',c:'bg-gray-200',id:'free3'}
+      );
+    }
   }
-
   if(gym){
     s.push(
       {t:'19:00-19:30',a:'К залу',c:'bg-red-100',id:'gym1',supps:['Бета-аланин','Цитрулин']},
       {t:'19:30-21:00',a:'Тренировка',c:'bg-red-300',id:'gym'},
-      {t:'21:00-21:30',a:'От зала',c:'bg-red-100',id:'gym2',supps:['Креатин','Гейнер']}
+      {t:'21:00-21:30',a:'От зала',c:'bg-red-100',id:'gym2',supps:['Креатин','Гейнер']},
+      {t:'21:30-22:30',a:'Ужин',c:'bg-green-200',id:'dinner'},
+      {t:'22:30-23:30',a:'Курс',c:'bg-purple-200',id:'course'},
+      {t:'23:30-00:00',a:'Свободно',c:'bg-gray-200',id:'free',supps:['GABA','B-комплекс']}
     );
+  } else {
+    if(work){
+      s.push(
+        {t:'19:00-20:00',a:'Ужин',c:'bg-green-200',id:'dinner'},
+        {t:'20:00-22:00',a:'Курс 2ч',c:'bg-purple-300',id:'course'},
+        {t:'22:00-00:00',a:'Свободно',c:'bg-gray-200',id:'free',supps:['GABA','B-комплекс']}
+      );
+    } else {
+      s.push(
+        {t:'18:30-19:30',a:'Ужин',c:'bg-green-200',id:'dinner'},
+        {t:'19:30-21:30',a:'Курс 2ч',c:'bg-purple-300',id:'course'},
+        {t:'21:30-00:00',a:'Свободно',c:'bg-gray-200',id:'free',supps:['GABA','B-комплекс']}
+      );
+    }
   }
-
-  s.push(
-    {t:'21:30-00:00',a:'Свободно',c:'bg-gray-200',id:'free',supps:['GABA','B-комплекс']},
-    {t:'00:00-06:00',a:'Сон',c:'bg-indigo-300',id:'sleep'}
-  );
-
+  s.push({t:'00:00-06:00',a:'Сон',c:'bg-indigo-300',id:'sleep'});
   return s;
 }
 
-/* ================== RENDER ================== */
+/* ===== ДНЕВНАЯ СТАТИСТИКА СПОРТПИТА С АНИМАЦИЕЙ ===== */
+renderDailySuppStats(dayIndex){
+  const dayDate=this.getDateForDay(dayIndex);
+  const slots=this.getSlots(dayIndex);
+
+  let total=0, taken=0;
+  slots.forEach((slot,i)=>{
+    if(slot.supps){
+      slot.supps.forEach((s,si)=>{
+        total++;
+        const sk=`${dayDate}-${slot.id}-${i}-s${si}`;
+        if(this.state.supplements[sk]) taken++;
+      });
+    }
+  });
+
+  if(total===0) return '';
+
+  const percent=Math.round((taken/total)*100);
+
+  return `
+    <div class="mt-3 p-3 rounded bg-teal-50 border border-teal-200">
+      <div class="flex justify-between text-sm font-semibold text-teal-800 mb-1">
+        <span>💊 Спортпит сегодня</span>
+        <span class="progress-percent">${percent}%</span>
+      </div>
+      <div class="w-full h-2 bg-teal-100 rounded overflow-hidden">
+        <div class="progress-bar-inner h-full bg-teal-500" style="width:${percent}%"></div>
+      </div>
+    </div>
+  `;
+}
+
+/* ===== RENDER ===== */
 render(){
   this.slotsElements={};
+  const dayIndex=this.state.selectedDay;
+  const dayDate=this.getDateForDay(dayIndex);
+  const slots=this.getSlots(dayIndex);
+  const container=document.getElementById('app');
+  container.innerHTML='';
 
-  const d=this.state.selectedDay;
-  const date=this.getDateForDay(d);
-  const slots=this.getSlots(d);
-  const app=document.getElementById('app');
-  app.innerHTML='';
-
-  /* HEADER */
+  // ===== Header + прогресс =====
   const header=document.createElement('div');
   header.className='p-4';
-  header.innerHTML=`<h1 class="text-xl font-bold mb-2">📅 ${this.days[d]} ${date}</h1>`;
-  app.appendChild(header);
+  header.innerHTML=`
+    <h1 class="text-xl font-bold mb-2">📅 ${this.days[dayIndex]} ${dayDate}</h1>
+    ${this.renderDailySuppStats(dayIndex)}
+  `;
+  container.appendChild(header);
 
-  /* OPTIONS */
+  // ===== Работа / Зал / Ремонт =====
   const opts=document.createElement('div');
   opts.className='flex gap-2 mb-4 px-4';
   ['work','gym','repair'].forEach(type=>{
-    const b=document.createElement('button');
-    b.className=`flex-1 py-2 rounded text-white ${this.state.schedule[d][type]?`bg-${this.colors[type]}-500`:'bg-gray-400'}`;
-    b.textContent=type==='work'?'Работа':type==='gym'?'Зал':'Ремонт';
-    b.onclick=()=>{
-      this.state.schedule[d][type]=!this.state.schedule[d][type];
+    const btn=document.createElement('button');
+    const color=this.colors[type];
+    btn.className=`flex-1 py-2 rounded text-white ${this.state.schedule[dayIndex][type]?`bg-${color}-500`:'bg-gray-400'}`;
+    btn.innerText=type==='work'?'Работа':type==='gym'?'Зал':'Ремонт';
+    btn.addEventListener('click',()=>{
+      this.state.schedule[dayIndex][type]=!this.state.schedule[dayIndex][type];
       this.save();
       this.render();
-      this.scrollToCurrent();
-    };
-    opts.appendChild(b);
+    });
+    opts.appendChild(btn);
   });
-  app.appendChild(opts);
+  container.appendChild(opts);
 
-  /* SLOTS */
-  const list=document.createElement('div');
-  list.className='flex-1 overflow-y-auto px-4';
+  // ===== Слоты =====
+  const slotsContainer=document.createElement('div');
+  slotsContainer.className='flex-1 overflow-y-auto px-4';
 
   slots.forEach((slot,i)=>{
-    const key=`${date}-${slot.id}-${i}`;
-    const div=document.createElement('div');
-    div.className=`slot p-3 mb-2 rounded ${slot.c} ${this.isCurrent(slot)?'current-time':''}`;
+    const key=`${dayDate}-${slot.id}-${i}`;
+    const slotDiv=document.createElement('div');
+    slotDiv.className=`slot p-3 mb-2 rounded ${slot.c} ${this.isCurrent(slot)?'current-time':''}`;
 
     const done=this.state.completed[key];
-    let suppHtml='';
 
+    let suppHtml='';
     if(slot.supps){
       suppHtml='<div class="mt-1 pt-1 border-t border-teal-300 bg-teal-50 px-2 py-1 rounded">';
       slot.supps.forEach((s,si)=>{
@@ -210,7 +255,7 @@ render(){
       suppHtml+='</div>';
     }
 
-    div.innerHTML=`
+    slotDiv.innerHTML=`
       <div class="flex justify-between items-start">
         <div>
           <div class="font-semibold">${slot.t}</div>
@@ -220,74 +265,88 @@ render(){
         <button class="task-btn w-6 h-6 border-2 rounded ${done?'bg-green-500':'border-gray-400'}">${done?'✓':''}</button>
       </div>`;
 
-    div.querySelector('.task-btn').onclick=()=>{
+    const taskBtn = slotDiv.querySelector('.task-btn');
+    taskBtn.onclick = ()=>{
       this.state.completed[key]=!this.state.completed[key];
       this.save();
-      this.updateSlot(div,key);
+      taskBtn.textContent = this.state.completed[key] ? '✓' : '';
+      taskBtn.classList.toggle('bg-green-500',this.state.completed[key]);
+      taskBtn.classList.toggle('border-gray-400',!this.state.completed[key]);
+      slotDiv.classList.toggle('opacity-80',this.state.completed[key]);
     };
 
-    div.querySelectorAll('.supp-btn').forEach(b=>{
+    slotDiv.querySelectorAll('.supp-btn').forEach(b=>{
       b.onclick=()=>{
         const k=b.dataset.key;
         this.state.supplements[k]=!this.state.supplements[k];
         this.save();
-        this.updateSupp(b,k);
+        b.textContent=this.state.supplements[k]?'✓':'';
+        b.classList.toggle('bg-green-500',this.state.supplements[k]);
+
+        // ===== Анимация прогресса =====
+        const progressBar = document.querySelector('.progress-bar-inner');
+        const percentLabel = document.querySelector('.progress-percent');
+        let total=0,taken=0;
+        slots.forEach((slot2,ii)=>{
+          if(slot2.supps){
+            slot2.supps.forEach((s2,si2)=>{
+              total++;
+              const sk2=`${dayDate}-${slot2.id}-${ii}-s${si2}`;
+              if(this.state.supplements[sk2]) taken++;
+            });
+          }
+        });
+        const targetPercent=Math.round((taken/total)*100);
+
+        // Плавная анимация числа
+        let current=parseInt(percentLabel.textContent)||0;
+        const step = targetPercent > current ? 1 : -1;
+        const interval = setInterval(()=>{
+          current+=step;
+          percentLabel.textContent = current+'%';
+          progressBar.style.width = current+'%';
+          if(current===targetPercent) clearInterval(interval);
+        },10);
       };
     });
 
-    list.appendChild(div);
-    this.slotsElements[key]=div;
+    slotsContainer.appendChild(slotDiv);
+    this.slotsElements[key]=slotDiv;
   });
 
-  app.appendChild(list);
+  container.appendChild(slotsContainer);
 
-  /* FOOTER */
+  // ===== Нижняя панель дней =====
   const footer=document.createElement('div');
-  footer.className='bg-white border-t flex p-2';
-  this.days.forEach((name,i)=>{
-    const b=document.createElement('button');
-    b.className=`flex-1 py-2 mx-1 rounded ${i===d?'bg-blue-500 text-white':'bg-gray-200'}`;
-    b.textContent=name;
-    b.onclick=()=>{this.state.selectedDay=i;this.render();this.scrollToCurrent();}
-    footer.appendChild(b);
+  footer.className='bg-white border-t flex justify-between p-2 fixed bottom-0 w-full';
+  this.days.forEach((d,i)=>{
+    const btn=document.createElement('button');
+    btn.className=`flex-1 py-2 mx-1 rounded ${i===dayIndex?'bg-blue-500 text-white':'bg-gray-200'}`;
+    btn.innerText=d;
+    btn.addEventListener('click',()=>{
+      this.state.selectedDay=i;
+      this.render();
+      this.scrollToCurrent();
+    });
+    footer.appendChild(btn);
   });
-  app.appendChild(footer);
+  container.appendChild(footer);
 
   this.setupSwipe();
 }
 
-/* ================== UPDATES ================== */
-updateSlot(div,key){
-  const d=this.state.completed[key];
-  const b=div.querySelector('.task-btn');
-  b.className=`task-btn w-6 h-6 border-2 rounded ${d?'bg-green-500':'border-gray-400'}`;
-  b.textContent=d?'✓':'';
-  div.classList.toggle('opacity-80',d);
-}
-
-updateSupp(btn,key){
-  const t=this.state.supplements[key];
-  btn.className=`supp-btn w-4 h-4 border rounded ${t?'bg-green-500':'border-gray-400'}`;
-  btn.textContent=t?'✓':'';
-  const l=btn.nextElementSibling;
-  if(l) l.className=`text-xs ${t?'line-through text-gray-500':'text-teal-700'}`;
-}
-
-/* ================== SWIPE ================== */
 setupSwipe(){
   if(this.swipeInit) return;
   this.swipeInit=true;
-  const app=document.getElementById('app');
-
-  app.addEventListener('touchstart',e=>{
+  const container=document.getElementById('app');
+  container.addEventListener('touchstart',e=>{
     this.touchStartX=e.touches[0].clientX;
     this.touchStartY=e.touches[0].clientY;
   });
-
-  app.addEventListener('touchend',e=>{
+  container.addEventListener('touchend',e=>{
     const dx=e.changedTouches[0].clientX-this.touchStartX;
     const dy=e.changedTouches[0].clientY-this.touchStartY;
-    if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){
+    if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
       this.state.selectedDay=Math.min(6,Math.max(0,this.state.selectedDay+(dx<0?1:-1)));
       this.render();
       this.scrollToCurrent();
@@ -295,7 +354,6 @@ setupSwipe(){
   });
 }
 
-/* ================== SCROLL ================== */
 scrollToCurrent(){
   Object.values(this.slotsElements).find(e=>{
     if(e.classList.contains('current-time')){
@@ -304,9 +362,9 @@ scrollToCurrent(){
     }
   });
 }
+
 }
 
-/* ================== START ================== */
 new Planner();
 </script>
 </body>
