@@ -564,38 +564,74 @@ getSlots(dayIndex){
 }
  
 renderDailySuppStats(dayIndex){
-  const dayDate=this.getDateKey(dayIndex);
-  const slots=this.getSlots(dayIndex);
+  const dayDate = this.getDateKey(dayIndex);
+  const slots = this.getSlots(dayIndex);
 
-  let total=0, taken=0;
+  let total = 0;
+  let taken = 0;
+
   slots.forEach((slot,i)=>{
     if(slot.supps){
-      slot.supps.forEach((s,si)=>{
+      slot.supps.forEach((_,si)=>{
         total++;
-        const sk=`${dayDate}-${slot.id}-${i}-s${si}`;
-        if(this.state.supplements[sk]) taken++;
+        const key = `${dayDate}-${slot.id}-${i}-s${si}`;
+        if(this.state.supplements[key]) taken++;
       });
     }
   });
 
-  if(total===0) return '';
+  if(total === 0) return '';
 
-  const percent=Math.round((taken/total)*100);
+  const percent = Math.round((taken / total) * 100);
 
   return `
-    <div class="card p-4 mb-4">
+    <div class="card p-4 mb-4" id="daily-supp-card">
       <div class="flex justify-between items-center mb-2">
-        <span class="text-base font-semibold" style="color:#1C1C1E;">💊 Спортпит</span>
-        <span class="progress-percent text-2xl font-bold" style="color:#34C759;">${percent}%</span>
+        <span class="text-base font-semibold">💊 Спортпит</span>
+        <span class="progress-percent text-2xl font-bold" style="color:#34C759;">
+          ${percent}%
+        </span>
       </div>
+
       <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-        <div class="progress-bar-inner h-full rounded-full" style="width:${percent}%"></div>
+        <div class="progress-bar-inner h-full rounded-full"
+             style="width:${percent}%"></div>
       </div>
-      <div class="mt-2 text-xs text-gray-500">${taken} из ${total} приняты</div>
+
+      <div class="mt-2 text-xs text-gray-500">
+        ${taken} из ${total} приняты
+      </div>
     </div>
   `;
 }
- 
+
+updateSuppProgress(){
+  const card = document.getElementById('daily-supp-card');
+  if(!card) return;
+
+  const dayIndex = this.state.selectedDay;
+  const dayDate = this.getDateKey(dayIndex);
+  const slots = this.getSlots(dayIndex);
+
+  let total = 0;
+  let taken = 0;
+
+  slots.forEach((slot,i)=>{
+    if(slot.supps){
+      slot.supps.forEach((_,si)=>{
+        total++;
+        const key = `${dayDate}-${slot.id}-${i}-s${si}`;
+        if(this.state.supplements[key]) taken++;
+      });
+    }
+  });
+
+  const percent = Math.round((taken / total) * 100);
+
+  card.querySelector('.progress-percent').textContent = percent + '%';
+  card.querySelector('.progress-bar-inner').style.width = percent + '%';
+}
+
 renderSchedule(){
   this.slotsElements = {};
   const dayIndex = this.state.selectedDay;
@@ -732,40 +768,53 @@ render(){
 }
  
 bindEvents(){
-  // Skip buttons
-  document.querySelectorAll('[data-skip]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const k = btn.dataset.skip;
-      this.state.skipped[k] = !this.state.skipped[k];
-      this.save();
-      haptic.heavy();
-      this.render();
-    };
-  });
+// Skip buttons - БЕЗ полного рендера
+document.querySelectorAll('[data-skip]').forEach(btn=>{
+  btn.onclick = ()=>{
+    const k = btn.dataset.skip;
+    this.state.skipped[k] = !this.state.skipped[k];
+    this.save();
+    haptic.heavy();
+    
+    // Обновляем только кнопку и слот
+    const isSkipped = this.state.skipped[k];
+    btn.textContent = isSkipped ? 'Пропущено' : 'Пропустить';
+    btn.classList.toggle('skipped', isSkipped);
+    
+    const slot = btn.closest('.slot');
+    if(slot) slot.classList.toggle('skipped-slot', isSkipped);
+  };
+});
 
-  // Supplement checkboxes
-  document.querySelectorAll('[data-supp]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const k = btn.dataset.supp;
-      this.state.supplements[k] = !this.state.supplements[k];
-      this.save();
-      haptic.success();
-      this.render();
-    };
-  });
+// Supplement checkboxes - БЕЗ полного рендера
+document.querySelectorAll('[data-supp]').forEach(btn=>{
+  btn.onclick = ()=>{
+    const k = btn.dataset.supp;
+    this.state.supplements[k] = !this.state.supplements[k];
+    this.save();
+    haptic.success();
+    
+    // Обновляем только чекбокс
+    btn.textContent = this.state.supplements[k] ? '✓' : '';
+    btn.classList.toggle('checked', this.state.supplements[k]);
+    
+    // Обновляем только прогресс-бар спортпита
+    this.updateSuppProgress();
+  };
+});
 
-  // Category buttons
-  document.querySelectorAll('[data-category]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const type = btn.dataset.category;
-      const dayIndex = this.state.selectedDay;
-      this.state.schedule[dayIndex][type] = !this.state.schedule[dayIndex][type];
-      this.save();
-      haptic.medium();
-      this.render();
-      this.scrollToCurrent();
-    };
-  });
+  // Category buttons - полный рендер (нужно!)
+document.querySelectorAll('[data-category]').forEach(btn=>{
+  btn.onclick = ()=>{
+    const type = btn.dataset.category;
+    const dayIndex = this.state.selectedDay;
+    this.state.schedule[dayIndex][type] = !this.state.schedule[dayIndex][type];
+    this.save();
+    haptic.medium();
+    this.render(); // ← Здесь полный рендер нужен
+    this.scrollToCurrent();
+  };
+});
 }
  
 setupSwipe(){
