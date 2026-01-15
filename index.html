@@ -87,11 +87,33 @@
     background: #E5E5EA;
   }
   
+  /* Плавная полоса с overshoot */
   .progress-bar-inner {
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); /* spring-curve */
     background: linear-gradient(90deg, #34C759 0%, #30D158 100%);
   }
-  
+
+  /* Проценты */
+  .progress-percent {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+  }
+
+  .progress-percent.bump {
+    transform: scale(1.2);
+    opacity: 0.85;
+  }
+
+  /* Счётчик X из Y */
+  .supp-counter {
+    transition: opacity 0.2s ease;
+  }
+
+  .supp-counter.fade {
+    opacity: 0.4;
+  }
+
   .supp-checkbox {
     width: 20px;
     height: 20px;
@@ -300,7 +322,9 @@ constructor(){
     skipped: storage.get('skipped') ?? {},
     supplements: storage.get('supplements') ?? {},
     notifications: storage.get('notifications') || true,
-    lastNotification: storage.get('lastNotification') || null
+    lastNotification: storage.get('lastNotification') || null,
+    suppNotifications: storage.get('suppNotifications') || {}
+
   };
 
   this.colors={
@@ -319,7 +343,9 @@ constructor(){
   setInterval(()=>{
     this.render();
     this.checkNotifications();
-  }, 60000);
+    this.checkSuppReminders(); // добавляем проверку спортпита
+}, 60000);
+
   
   this.checkNotifications();
 }
@@ -376,6 +402,46 @@ checkNotifications(){
       this.state.lastNotification = notifyKey;
       this.save();
     }
+  });
+}
+
+checkSuppReminders() {
+  const now = new Date();
+  const dayIndex = this.state.selectedDay;
+  const dayDate = this.getDateKey(dayIndex);
+  const slots = this.getSlots(dayIndex);
+
+  slots.forEach((slot, i) => {
+    if (!slot.supps) return;
+
+    slot.supps.forEach((supp, si) => {
+      const key = `${dayDate}-${slot.id}-${i}-s${si}`;
+      const suppState = this.state.supplements[key];
+
+      // Время начала слота
+      const [startTime] = slot.t.split('-');
+      const [h, m] = startTime.split(':').map(Number);
+      const slotMinutes = h * 60 + m;
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+      // Напоминание за 5 минут
+      if (nowMinutes >= slotMinutes - 5 && nowMinutes < slotMinutes && !suppState) {
+        if (!this.state.suppNotifications[key]?.notified) {
+          this.showNotification(`💊 Приём: ${supp} через 5 минут`);
+          this.state.suppNotifications[key] = { notified: true, taken: false };
+          this.save();
+        }
+      }
+
+      // Пропущено
+      if (nowMinutes > slotMinutes + 15 && !suppState) {
+        if (!this.state.suppNotifications[key]?.taken) {
+          this.showNotification(`⚠️ Пропущено: ${supp}`);
+          this.state.suppNotifications[key] = { notified: true, taken: false };
+          this.save();
+        }
+      }
+    });
   });
 }
 
@@ -598,7 +664,7 @@ renderDailySuppStats(dayIndex){
              style="width:${percent}%"></div>
       </div>
 
-      <div class="mt-2 text-xs text-gray-500">
+      <div class="mt-2 text-xs text-gray-500 supp-counter">
         ${taken} из ${total} приняты
       </div>
     </div>
@@ -628,8 +694,55 @@ updateSuppProgress(){
 
   const percent = Math.round((taken / total) * 100);
 
-  card.querySelector('.progress-percent').textContent = percent + '%';
-  card.querySelector('.progress-bar-inner').style.width = percent + '%';
+  // ------------------------
+  // 1️⃣ Прогресс-бар с overshoot
+  const bar = card.querySelector('.progress-bar-inner');
+
+  const overshoot = Math.min(percent + 1, 100);
+  bar.style.width = overshoot + '%';
+
+  setTimeout(() => {
+    bar.style.width = percent + '%';
+    
+    // Если 100%, делаем подпрыг
+    if(percent === 100){
+      bar.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.6s';
+      bar.style.transform = 'scaleY(1.3)';
+      bar.style.background = '#28D12E'; // ярко-зелёный
+      setTimeout(()=>{
+        bar.style.transform = 'scaleY(1)';
+        bar.style.background = 'linear-gradient(90deg, #34C759 0%, #30D158 100%)';
+      }, 300);
+    }
+  }, 300);
+
+  // ------------------------
+  // 2️⃣ Проценты — анимация набора с «пружиной»
+  const percentEl = card.querySelector('.progress-percent');
+
+  percentEl.classList.remove('bump');
+  void percentEl.offsetWidth;
+  percentEl.classList.add('bump');
+
+  let current = parseInt(percentEl.textContent) || 0;
+  const step = current < percent ? 1 : -1;
+
+  if(this.percentInterval) clearInterval(this.percentInterval);
+  this.percentInterval = setInterval(()=>{
+    current += step;
+    percentEl.textContent = current + '%';
+    if((step>0 && current>=percent) || (step<0 && current<=percent)){
+      percentEl.textContent = percent + '%';
+      clearInterval(this.percentInterval);
+    }
+  }, 12);
+
+  // ------------------------
+  // 3️⃣ Счётчик X из Y с плавным fade
+  const counter = card.querySelector('.supp-counter');
+  counter.classList.add('fade');
+  counter.textContent = `${taken} из ${total} приняты`;
+  setTimeout(()=>counter.classList.remove('fade'),200);
 }
 
 renderSchedule(){
@@ -790,18 +903,26 @@ document.querySelectorAll('[data-skip]').forEach(btn=>{
 document.querySelectorAll('[data-supp]').forEach(btn=>{
   btn.onclick = ()=>{
     const k = btn.dataset.supp;
+    // Переключаем состояние добавки
     this.state.supplements[k] = !this.state.supplements[k];
+
+    // Если есть запись о напоминании — отмечаем как взятую
+    if(this.state.suppNotifications[k]){
+      this.state.suppNotifications[k].taken = this.state.supplements[k];
+    }
+
     this.save();
     haptic.success();
-    
-    // Обновляем только чекбокс
+
+    // Обновляем визуально чекбокс
     btn.textContent = this.state.supplements[k] ? '✓' : '';
     btn.classList.toggle('checked', this.state.supplements[k]);
-    
-    // Обновляем только прогресс-бар спортпита
+
+    // Обновляем прогресс-бар спортпита
     this.updateSuppProgress();
   };
 });
+
 
   // Category buttons - полный рендер (нужно!)
 document.querySelectorAll('[data-category]').forEach(btn=>{
@@ -969,7 +1090,29 @@ renderActivityRings(){
     </div>
   `;
 }
- 
+renderSuppAnalytics(){
+  const total = Object.keys(this.state.supplements).length;
+  const taken = Object.values(this.state.supplements).filter(v => v).length;
+  const missed = total - taken;
+
+  return `
+    <div class="card p-6 mb-4">
+      <h2 class="text-xl font-bold mb-4">💊 Спортпит</h2>
+      <div class="flex justify-between items-center mb-2">
+        <span>Принято</span>
+        <span class="font-bold text-green-600">${taken}</span>
+      </div>
+      <div class="flex justify-between items-center mb-2">
+        <span>Пропущено</span>
+        <span class="font-bold text-red-500">${missed}</span>
+      </div>
+      <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+        <div class="h-full rounded-full" style="width:${(taken/total)*100}%; background:#34C759;"></div>
+      </div>
+    </div>
+  `;
+}
+
 scrollToCurrent(){
   if(this.state.currentTab !== 'schedule') return;
   
@@ -1080,6 +1223,7 @@ renderAnalytics(){
         ` : ''}
       </div>
     </div>
+       ${this.renderSuppAnalytics()}
     `;
 } // ← закрывает renderAnalytics()
 
@@ -1090,5 +1234,3 @@ document.addEventListener('DOMContentLoaded', () => {
   new Planner();
 });
 </script>
-</body>
-</html>
