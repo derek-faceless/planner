@@ -166,6 +166,25 @@
     color: #1C1C1E;
   }
   
+  .tab-btn {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-weight: 600;
+    color: #8E8E93;
+    transition: all 0.3s;
+    border-bottom: 3px solid transparent;
+  }
+  
+  .tab-btn.active {
+    color: #007AFF;
+    border-bottom-color: #007AFF;
+  }
+  
+  .tab-btn:active {
+    transform: scale(0.96);
+  }
+  
   @keyframes slideIn {
     from {
       opacity: 0;
@@ -180,10 +199,64 @@
   .slot {
     animation: slideIn 0.3s ease;
   }
+  
+  @keyframes ringGrow {
+    from {
+      stroke-dashoffset: 440;
+    }
+  }
+  
+  .activity-ring {
+    animation: ringGrow 1s ease-out;
+  }
+  
+  .notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: white;
+    border-radius: 16px;
+    padding: 16px 20px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    z-index: 1000;
+    min-width: 300px;
+    animation: slideDown 0.4s ease-out forwards;
+  }
+  
+  @keyframes slideDown {
+    to {
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+  
+  .notification.hide {
+    animation: slideUp 0.4s ease-out forwards;
+  }
+  
+  @keyframes slideUp {
+    to {
+      transform: translateX(-50%) translateY(-100px);
+      opacity: 0;
+    }
+  }
+  
+  .trend-up {
+    color: #34C759;
+  }
+  
+  .trend-down {
+    color: #FF3B30;
+  }
+  
+  .chart-bar {
+    transition: height 0.5s ease-out;
+  }
 </style>
 </head>
 
 <body class="flex flex-col min-h-screen">
+<div id="notification-container"></div>
 <div id="app" class="flex-1 flex flex-col overflow-hidden pb-20"></div>
 
 <script>
@@ -192,12 +265,29 @@ const storage = {
   set: (k,v) => localStorage.setItem(k, JSON.stringify(v))
 };
 
+// Haptic feedback helper
+const haptic = {
+  light: () => {
+    if (navigator.vibrate) navigator.vibrate(10);
+  },
+  medium: () => {
+    if (navigator.vibrate) navigator.vibrate(20);
+  },
+  heavy: () => {
+    if (navigator.vibrate) navigator.vibrate(30);
+  },
+  success: () => {
+    if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
+  }
+};
+
 class Planner {
 constructor(){
   const today=new Date();
   this.days=['ПН','ВТ','СР','ЧТ','ПТ','СБ','ВС'];
   this.state={
     selectedDay: today.getDay()===0?6:today.getDay()-1,
+    currentTab: 'schedule',
     schedule: storage.get('schedule') || {
       0:{work:true,gym:true,repair:true},
       1:{work:false,gym:false,repair:true},
@@ -207,9 +297,10 @@ constructor(){
       5:{work:false,gym:false,repair:true},
       6:{work:false,gym:true,repair:true}
     },
-    skipped: storage.get('skipped') || {},
-    supplements: storage.get('supplements') || {},
-    showStats:true
+    skipped: storage.get('skipped') ?? {},
+    supplements: storage.get('supplements') ?? {},
+    notifications: storage.get('notifications') || true,
+    lastNotification: storage.get('lastNotification') || null
   };
 
   this.colors={
@@ -225,13 +316,20 @@ constructor(){
   this.render();
   this.scrollToCurrent();
   
-  setInterval(()=>this.render(), 60000);
+  setInterval(()=>{
+    this.render();
+    this.checkNotifications();
+  }, 60000);
+  
+  this.checkNotifications();
 }
 
 save(){
   storage.set('schedule',this.state.schedule);
   storage.set('skipped',this.state.skipped);
   storage.set('supplements',this.state.supplements);
+  storage.set('notifications',this.state.notifications);
+  storage.set('lastNotification',this.state.lastNotification);
 }
 
 getDateForDay(i){
@@ -252,6 +350,63 @@ getDateKey(i){
 toMin(t){
   const[h,m]=t.split(':').map(Number);
   return h*60+m;
+}
+
+checkNotifications(){
+  if(!this.state.notifications) return;
+  
+  const now = new Date();
+  const currentDayIndex = now.getDay() === 0 ? 6 : now.getDay() - 1;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const slots = this.getSlots(currentDayIndex);
+  
+  slots.forEach((slot, i) => {
+    if(!slot.t.includes('-')) return;
+    
+    const [startTime] = slot.t.split('-');
+    const [startH, startM] = startTime.split(':').map(Number);
+    let startMinutes = startH * 60 + startM;
+    
+    // Уведомление за 10 минут
+    const notifyTime = startMinutes - 10;
+    const notifyKey = `${this.getDateKey(currentDayIndex)}-${slot.id}-${i}`;
+    
+    if(Math.abs(currentMinutes - notifyTime) < 1 && this.state.lastNotification !== notifyKey){
+      this.showNotification(`Через 10 минут: ${slot.a}`, slot.supps);
+      this.state.lastNotification = notifyKey;
+      this.save();
+    }
+  });
+}
+
+showNotification(text, supps){
+  haptic.medium();
+  
+  const container = document.getElementById('notification-container');
+  const notif = document.createElement('div');
+  notif.className = 'notification';
+  
+  let suppHtml = '';
+  if(supps && supps.length > 0){
+    suppHtml = `<div class="mt-2 text-sm text-gray-600">💊 ${supps.join(', ')}</div>`;
+  }
+  
+  notif.innerHTML = `
+    <div class="flex items-start gap-3">
+      <div class="text-2xl">⏰</div>
+      <div class="flex-1">
+        <div class="font-semibold text-gray-900">${text}</div>
+        ${suppHtml}
+      </div>
+    </div>
+  `;
+  
+  container.appendChild(notif);
+  
+  setTimeout(() => {
+    notif.classList.add('hide');
+    setTimeout(() => notif.remove(), 400);
+  }, 5000);
 }
 
 isPast(slot, dayIndex){
@@ -407,7 +562,7 @@ getSlots(dayIndex){
   s.push({t:'00:00-06:00',a:'Сон',c:'bg-indigo-100',id:'sleep'});
   return s;
 }
-
+ 
 renderDailySuppStats(dayIndex){
   const dayDate=this.getDateKey(dayIndex);
   const slots=this.getSlots(dayIndex);
@@ -440,202 +595,451 @@ renderDailySuppStats(dayIndex){
     </div>
   `;
 }
+ 
+renderSchedule(){
+  this.slotsElements = {};
+  const dayIndex = this.state.selectedDay;
+  const dayDate = this.getDateKey(dayIndex);
+  const slots = this.getSlots(dayIndex);
 
-render(){
-  this.slotsElements={};
-  const dayIndex=this.state.selectedDay;
-  const dayDate=this.getDateKey(dayIndex);
-  const slots=this.getSlots(dayIndex);
-  const container=document.getElementById('app');
-  container.innerHTML='';
+  return `
+    <div>
+      <div class="mb-4">
+        <h1 class="header-title">${this.days[dayIndex]}</h1>
+        <p class="text-gray-500">${this.getDateForDay(dayIndex)}</p>
+      </div>
 
-  // Header
-  const header=document.createElement('div');
-  header.className='p-4 pb-0';
-  header.innerHTML=`
-    <h1 class="header-title mb-1">${this.days[dayIndex]}</h1>
-    <p class="text-base text-gray-500 mb-4">${this.getDateForDay(dayIndex)}</p>
-    ${this.renderDailySuppStats(dayIndex)}
-  `;
-  container.appendChild(header);
+      ${this.renderDailySuppStats(dayIndex)}
 
-  // Category buttons
-  const opts=document.createElement('div');
-  opts.className='flex gap-2 px-4 mb-4';
-  ['work','gym','repair'].forEach(type=>{
-    const btn=document.createElement('button');
-    const cfg=this.colors[type];
-    const isActive=this.state.schedule[dayIndex][type];
-    btn.className=`category-btn flex-1 py-3 text-white font-semibold ${isActive?'':'opacity-50'}`;
-    btn.style.background=isActive?cfg.bg:'#E5E5EA';
-    btn.style.color=isActive?'white':'#8E8E93';
-    btn.innerHTML=`${cfg.icon} ${cfg.text}`;
-    btn.addEventListener('click',()=>{
-      this.state.schedule[dayIndex][type]=!this.state.schedule[dayIndex][type];
-      this.save();
-      this.render();
-    });
-    opts.appendChild(btn);
-  });
-  container.appendChild(opts);
-
-  // Slots
-  const slotsContainer=document.createElement('div');
-  slotsContainer.className='flex-1 overflow-y-auto px-4';
-
-  slots.forEach((slot,i)=>{
-    const key=`${dayDate}-${slot.id}-${i}`;
-    const slotDiv=document.createElement('div');
-    
-    const isSkipped=this.state.skipped[key];
-    const isPast = this.isPast(slot, dayIndex);
-    const isCurrent = this.isCurrent(slot, dayIndex);
-    
-    let slotClass = `slot p-4 mb-3 ${slot.c}`;
-    if(isCurrent) slotClass += ' current-time';
-    if(isPast) slotClass += ' past-slot';
-    if(isSkipped) slotClass += ' skipped-slot';
-    
-    slotDiv.className = slotClass;
-
-    let suppHtml='';
-    if(slot.supps){
-      suppHtml='<div class="mt-3 pt-3 border-t border-gray-100">';
-      slot.supps.forEach((s,si)=>{
-        const sk=`${key}-s${si}`;
-        const taken=this.state.supplements[sk];
-        suppHtml+=`
-          <div class="flex items-center gap-2 mb-2">
-            <button class="supp-btn supp-checkbox ${taken?'checked':''}" data-key="${sk}">
-              ${taken?'✓':''}
+      <div class="flex gap-2 mb-4">
+        ${['work','gym','repair'].map(type=>{
+          const cfg=this.colors[type];
+          const isActive=this.state.schedule[dayIndex][type];
+          return `
+            <button 
+              class="category-btn flex-1 py-3 font-semibold ${isActive?'':'opacity-50'}" 
+              style="background:${isActive?cfg.bg:'#E5E5EA'}; color:${isActive?'white':'#8E8E93'};"
+              data-category="${type}">
+              ${cfg.icon} ${cfg.text}
             </button>
-            <span class="text-sm ${taken?'line-through text-gray-400':'text-gray-700'}">💊 ${s}</span>
-          </div>`;
-      });
-      suppHtml+='</div>';
-    }
+          `;
+        }).join('')}
+      </div>
 
-    const showSkipBtn = isPast;
+      <div class="space-y-3">
+        ${slots.map((slot,i)=>{
+          const key = `${dayDate}-${slot.id}-${i}`;
+          const isPast = this.isPast(slot, dayIndex);
+          const isCurrent = this.isCurrent(slot, dayIndex);
+          const isSkipped = this.state.skipped[key];
 
-    slotDiv.innerHTML=`
-      <div class="flex justify-between items-start">
-        <div class="flex-1">
-          <div class="text-sm font-semibold text-gray-500 mb-0.5">${slot.t}</div>
-          <div class="text-base font-semibold" style="color:#1C1C1E;">${slot.a}</div>
-          ${suppHtml}
-        </div>
-        ${showSkipBtn ? `<button class="skip-btn ${isSkipped?'skipped':''}">
-          ${isSkipped?'Пропущено':'Пропустить'}
-        </button>` : ''}
-      </div>`;
+          return `
+            <div class="slot p-4 ${isCurrent?'current-time':''} ${isPast?'past-slot':''} ${isSkipped?'skipped-slot':''}">
+              <div class="flex justify-between">
+                <div>
+                  <div class="text-sm text-gray-500">${slot.t}</div>
+                  <div class="font-semibold">${slot.a}</div>
 
-    const skipBtn = slotDiv.querySelector('.skip-btn');
-    if(skipBtn){
-      skipBtn.onclick = ()=>{
-        this.state.skipped[key]=!this.state.skipped[key];
-        this.save();
-        skipBtn.textContent = this.state.skipped[key] ? 'Пропущено' : 'Пропустить';
-        skipBtn.classList.toggle('skipped',this.state.skipped[key]);
-        slotDiv.classList.toggle('skipped-slot',this.state.skipped[key]);
-      };
-    }
+                  ${slot.supps ? slot.supps.map((s,si)=>{
+                    const sk = `${key}-s${si}`;
+                    return `
+                      <div class="flex items-center gap-2 mt-2">
+                        <button 
+                          class="supp-checkbox ${this.state.supplements[sk]?'checked':''}" 
+                          data-supp="${sk}">
+                          ${this.state.supplements[sk]?'✓':''}
+                        </button>
+                        <span class="text-sm">${s}</span>
+                      </div>
+                    `;
+                  }).join('') : ''}
+                </div>
 
-    slotDiv.querySelectorAll('.supp-btn').forEach(b=>{
-      b.onclick=()=>{
-        const k=b.dataset.key;
-        this.state.supplements[k]=!this.state.supplements[k];
-        this.save();
-        b.textContent=this.state.supplements[k]?'✓':'';
-        b.classList.toggle('checked',this.state.supplements[k]);
+                ${isPast ? `
+                  <button class="skip-btn ${isSkipped?'skipped':''}" data-skip="${key}">
+                    ${isSkipped?'Пропущено':'Пропустить'}
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+ 
+render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
 
-        const progressBar = document.querySelector('.progress-bar-inner');
-        const percentLabel = document.querySelector('.progress-percent');
-        let total=0,taken=0;
-        slots.forEach((slot2,ii)=>{
-          if(slot2.supps){
-            slot2.supps.forEach((s2,si2)=>{
-              total++;
-              const sk2=`${dayDate}-${slot2.id}-${ii}-s${si2}`;
-              if(this.state.supplements[sk2]) taken++;
-            });
-          }
-        });
-        const targetPercent=Math.round((taken/total)*100);
+  // Tabs
+  const tabs = document.createElement('div');
+  tabs.className = 'flex px-4 pt-4';
+  tabs.innerHTML = `
+    <button class="tab-btn ${this.state.currentTab==='schedule'?'active':''}" data-tab="schedule">
+      📅 Расписание
+    </button>
+    <button class="tab-btn ${this.state.currentTab==='analytics'?'active':''}" data-tab="analytics">
+      📊 Аналитика
+    </button>
+  `;
+  app.appendChild(tabs);
 
-        let current=parseInt(percentLabel.textContent)||0;
-        const step = targetPercent > current ? 1 : -1;
-        const interval = setInterval(()=>{
-          current+=step;
-          percentLabel.textContent = current+'%';
-          progressBar.style.width = current+'%';
-          if(current===targetPercent) clearInterval(interval);
-        },10);
-      };
-    });
-
-    slotsContainer.appendChild(slotDiv);
-    this.slotsElements[key]=slotDiv;
-  });
-
-  container.appendChild(slotsContainer);
-
-  // Footer
-  const footer=document.createElement('div');
-  footer.className='card fixed bottom-4 left-4 right-4 p-2 flex justify-between gap-1';
-  this.days.forEach((d,i)=>{
-    const btn=document.createElement('button');
-    btn.className=`day-btn flex-1 py-2.5 ${i===dayIndex?'active':''}`;
-    btn.innerText=d;
-    btn.addEventListener('click',()=>{
-      this.state.selectedDay=i;
+  tabs.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.onclick = () => {
+      haptic.light();
+      this.state.currentTab = btn.dataset.tab;
       this.render();
-      this.scrollToCurrent();
-    });
-    footer.appendChild(btn);
+      if(this.state.currentTab === 'analytics') {
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      }
+    };
   });
-  container.appendChild(footer);
 
+  // Content
+  const content = document.createElement('div');
+  content.className = 'px-4 mt-4 flex-1 overflow-y-auto pb-4';
+
+  content.innerHTML =
+    this.state.currentTab === 'schedule'
+      ? this.renderSchedule()
+      : `${this.renderActivityRings()}${this.renderAnalytics()}`;
+
+  app.appendChild(content);
+
+  // Footer с днями недели (только для расписания)
+  if(this.state.currentTab === 'schedule'){
+    const footer = document.createElement('div');
+    footer.className = 'card fixed bottom-4 left-4 right-4 p-2 flex justify-between gap-1';
+    this.days.forEach((d,i)=>{
+      const btn = document.createElement('button');
+      btn.className = `day-btn flex-1 py-2.5 ${i===this.state.selectedDay?'active':''}`;
+      btn.innerText = d;
+      btn.onclick = ()=>{
+        haptic.light();
+        this.state.selectedDay = i;
+        this.render();
+        this.scrollToCurrent();
+      };
+      footer.appendChild(btn);
+    });
+    app.appendChild(footer);
+  }
+
+  this.bindEvents();
   this.setupSwipe();
 }
-
-setupSwipe(){
-  if(this.swipeInit) return;
-  this.swipeInit=true;
-  const container=document.getElementById('app');
-  container.addEventListener('touchstart',e=>{
-    this.touchStartX=e.touches[0].clientX;
-    this.touchStartY=e.touches[0].clientY;
+ 
+bindEvents(){
+  // Skip buttons
+  document.querySelectorAll('[data-skip]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const k = btn.dataset.skip;
+      this.state.skipped[k] = !this.state.skipped[k];
+      this.save();
+      haptic.heavy();
+      this.render();
+    };
   });
-  container.addEventListener('touchend',e=>{
-    const dx=e.changedTouches[0].clientX-this.touchStartX;
-    const dy=e.changedTouches[0].clientY-this.touchStartY;
-    if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)){
-      this.state.selectedDay=Math.min(6,Math.max(0,this.state.selectedDay+(dx<0?1:-1)));
+
+  // Supplement checkboxes
+  document.querySelectorAll('[data-supp]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const k = btn.dataset.supp;
+      this.state.supplements[k] = !this.state.supplements[k];
+      this.save();
+      haptic.success();
+      this.render();
+    };
+  });
+
+  // Category buttons
+  document.querySelectorAll('[data-category]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const type = btn.dataset.category;
+      const dayIndex = this.state.selectedDay;
+      this.state.schedule[dayIndex][type] = !this.state.schedule[dayIndex][type];
+      this.save();
+      haptic.medium();
       this.render();
       this.scrollToCurrent();
+    };
+  });
+}
+ 
+setupSwipe(){
+  if(this.swipeInit) return;
+  this.swipeInit = true;
+  
+  const app = document.getElementById('app');
+  
+  app.addEventListener('touchstart', e=>{
+    this.touchStartX = e.touches[0].clientX;
+    this.touchStartY = e.touches[0].clientY;
+  }, {passive: true});
+  
+  app.addEventListener('touchend', e=>{
+    const dx = e.changedTouches[0].clientX - this.touchStartX;
+    const dy = e.changedTouches[0].clientY - this.touchStartY;
+    
+    // Свайп работает только на вкладке расписания
+    if(this.state.currentTab === 'schedule' && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)){
+      haptic.light();
+      const newDay = this.state.selectedDay + (dx < 0 ? 1 : -1);
+      if(newDay >= 0 && newDay <= 6){
+        this.state.selectedDay = newDay;
+        this.render();
+        this.scrollToCurrent();
+      }
     }
   });
 }
+ 
+getWeeklyStats(){
+  const stats = {
+    work: {total: 0, completed: 0},
+    gym: {total: 0, completed: 0},
+    supplements: {total: 0, completed: 0}
+  };
+  
+  for(let i = 0; i < 7; i++){
+    const dayDate = this.getDateKey(i);
+    const slots = this.getSlots(i);
+    
+    // Work
+    if(this.state.schedule[i].work){
+      stats.work.total++;
+      const workSlot = slots.find(s => s.id === 'work');
+      if(workSlot){
+        const key = `${dayDate}-${workSlot.id}-${slots.indexOf(workSlot)}`;
+        if(!this.state.skipped[key] && this.isPast(workSlot, i)){
+          stats.work.completed++;
+        }
+      }
+    }
+    
+    // Gym
+    if(this.state.schedule[i].gym){
+      stats.gym.total++;
+      const gymSlot = slots.find(s => s.id === 'gym');
+      if(gymSlot){
+        const key = `${dayDate}-${gymSlot.id}-${slots.indexOf(gymSlot)}`;
+        if(!this.state.skipped[key] && this.isPast(gymSlot, i)){
+          stats.gym.completed++;
+        }
+      }
+    }
+    
+    // Supplements
+    slots.forEach((slot, si) => {
+      if(slot.supps){
+        slot.supps.forEach((s, ssi) => {
+          stats.supplements.total++;
+          const key = `${dayDate}-${slot.id}-${si}-s${ssi}`;
+          if(this.state.supplements[key]){
+            stats.supplements.completed++;
+          }
+        });
+      }
+    });
+  }
+  
+  return stats;
+}
 
+renderActivityRings(){
+  const stats = this.getWeeklyStats();
+  
+  const workPercent = stats.work.total > 0 ? (stats.work.completed / stats.work.total) * 100 : 0;
+  const gymPercent = stats.gym.total > 0 ? (stats.gym.completed / stats.gym.total) * 100 : 0;
+  const suppPercent = stats.supplements.total > 0 ? (stats.supplements.completed / stats.supplements.total) * 100 : 0;
+  
+  const circumference = 2 * Math.PI * 70;
+  
+  return `
+    <div class="card p-6 mb-4">
+      <h2 class="text-xl font-bold mb-4" style="color:#1C1C1E;">🏆 Активность за неделю</h2>
+      
+      <div class="flex justify-center mb-6">
+        <svg width="200" height="200" viewBox="0 0 200 200">
+          <!-- Work ring -->
+          <circle cx="100" cy="100" r="70" fill="none" stroke="#E5E5EA" stroke-width="12"/>
+          <circle class="activity-ring" cx="100" cy="100" r="70" fill="none" 
+                  stroke="#FF9500" stroke-width="12" 
+                  stroke-dasharray="${circumference}"
+                  stroke-dashoffset="${circumference - (circumference * workPercent / 100)}"
+                  transform="rotate(-90 100 100)" 
+                  stroke-linecap="round"/>
+          
+          <!-- Gym ring -->
+          <circle cx="100" cy="100" r="55" fill="none" stroke="#E5E5EA" stroke-width="12"/>
+          <circle class="activity-ring" cx="100" cy="100" r="55" fill="none" 
+                  stroke="#FF3B30" stroke-width="12" 
+                  stroke-dasharray="${circumference * 0.785}"
+                  stroke-dashoffset="${(circumference * 0.785) - (circumference * 0.785 * gymPercent / 100)}"
+                  transform="rotate(-90 100 100)" 
+                  stroke-linecap="round"/>
+          
+          <!-- Supplements ring -->
+          <circle cx="100" cy="100" r="40" fill="none" stroke="#E5E5EA" stroke-width="12"/>
+          <circle class="activity-ring" cx="100" cy="100" r="40" fill="none" 
+                  stroke="#34C759" stroke-width="12" 
+                  stroke-dasharray="${circumference * 0.571}"
+                  stroke-dashoffset="${(circumference * 0.571) - (circumference * 0.571 * suppPercent / 100)}"
+                  transform="rotate(-90 100 100)" 
+                  stroke-linecap="round"/>
+        </svg>
+      </div>
+      
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background:#FF9500;"></div>
+            <span class="font-semibold">💼 Работа</span>
+          </div>
+          <span class="text-lg font-bold" style="color:#FF9500;">${Math.round(workPercent)}%</span>
+        </div>
+        
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background:#FF3B30;"></div>
+            <span class="font-semibold">🏋️ Зал</span>
+          </div>
+          <span class="text-lg font-bold" style="color:#FF3B30;">${Math.round(gymPercent)}%</span>
+        </div>
+        
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full" style="background:#34C759;"></div>
+            <span class="font-semibold">💊 Спортпит</span>
+          </div>
+          <span class="text-lg font-bold" style="color:#34C759;">${Math.round(suppPercent)}%</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+ 
 scrollToCurrent(){
+  if(this.state.currentTab !== 'schedule') return;
+  
   const today = new Date();
   const currentDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
   
-  if(this.state.selectedDay === currentDayIndex){
-    Object.values(this.slotsElements).find(e=>{
-      if(e.classList.contains('current-time')){
-        e.scrollIntoView({behavior:'smooth',block:'center'});
-        return true;
+  setTimeout(() => {
+    if(this.state.selectedDay === currentDayIndex){
+      const el = document.querySelector('.current-time');
+      if(el){
+        el.scrollIntoView({behavior: 'smooth', block: 'center'});
       }
-    });
-  } else {
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    } else {
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+  }, 100);
+}
+
+renderAnalytics(){
+  const stats = this.getWeeklyStats();
+  
+  // Тренд по дням
+  const dailyGym = [];
+  for(let i = 0; i < 7; i++){
+    const dayDate = this.getDateKey(i);
+    const slots = this.getSlots(i);
+    const gymSlot = slots.find(s => s.id === 'gym');
+    
+    let status = 0; // 0 - не было, 1 - пропущено, 2 - выполнено
+    if(this.state.schedule[i].gym && gymSlot){
+      const key = `${dayDate}-${gymSlot.id}-${slots.indexOf(gymSlot)}`;
+      if(this.isPast(gymSlot, i)){
+        status = this.state.skipped[key] ? 1 : 2;
+      }
+    }
+    
+    dailyGym.push({day: this.days[i], status});
   }
-}
+  
+  const maxHeight = 80;
+  
+  return `
+    <div class="card p-6 mb-4">
+      <h2 class="text-xl font-bold mb-4" style="color:#1C1C1E;">📊 Тренды</h2>
+      
+      <div class="mb-6">
+        <p class="text-sm text-gray-600 mb-3">Посещаемость зала</p>
+        <div class="flex items-end justify-between gap-2" style="height:100px;">
+          ${dailyGym.map(d => {
+            const height = d.status === 2 ? maxHeight : (d.status === 1 ? maxHeight * 0.3 : 10);
+            const color = d.status === 2 ? '#34C759' : (d.status === 1 ? '#FF3B30' : '#E5E5EA');
+            return `
+              <div class="flex-1 flex flex-col items-center gap-1">
+                <div class="chart-bar w-full rounded-t-lg transition-all" 
+                     style="height:${height}px; background:${color};"></div>
+                <span class="text-xs text-gray-500">${d.day}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+      
+      <div class="flex gap-2 text-xs">
+        <div class="flex items-center gap-1">
+          <div class="w-3 h-3 rounded" style="background:#34C759;"></div>
+          <span>Выполнено</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <div class="w-3 h-3 rounded" style="background:#FF3B30;"></div>
+          <span>Пропущено</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <div class="w-3 h-3 rounded" style="background:#E5E5EA;"></div>
+          <span>Не было</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="card p-6 mb-4">
+      <h2 class="text-xl font-bold mb-4" style="color:#1C1C1E;">💡 Insights</h2>
+      
+      <div class="space-y-3">
+        ${stats.gym.completed > 0 ? `
+          <div class="p-4 rounded-xl" style="background:#F0FDF4;">
+            <p class="text-sm">
+              <span class="font-bold trend-up">Отлично!</span> 
+              Ты сходил в зал <span class="font-bold">${stats.gym.completed}</span> раз на этой неделе
+            </p>
+          </div>
+        ` : ''}
+        
+        ${stats.supplements.completed > stats.supplements.total * 0.8 ? `
+          <div class="p-4 rounded-xl" style="background:#F0F9FF;">
+            <p class="text-sm">
+              <span class="font-bold" style="color:#007AFF;">Молодец!</span> 
+              Регулярный прием спортпита помогает прогрессу
+            </p>
+          </div>
+        ` : ''}
+        
+        ${stats.work.completed === stats.work.total && stats.work.total > 0 ? `
+          <div class="p-4 rounded-xl" style="background:#FFF7ED;">
+            <p class="text-sm">
+              <span class="font-bold" style="color:#FF9500;">💪 Продуктивность 100%!</span> 
+              Ты не пропустил ни одного рабочего дня
+            </p>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+    `;
+} // ← закрывает renderAnalytics()
 
-}
+} // ← закрывает class Planner
 
-new Planner();
+// Запуск приложения
+document.addEventListener('DOMContentLoaded', () => {
+  new Planner();
+});
 </script>
 </body>
 </html>
