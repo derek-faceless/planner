@@ -1131,101 +1131,117 @@ scrollToCurrent(){
   }, 100);
 }
 
-renderAnalytics(){
-  const stats = this.getWeeklyStats();
-  
-  // Тренд по дням
-  const dailyGym = [];
-  for(let i = 0; i < 7; i++){
-    const dayDate = this.getDateKey(i);
-    const slots = this.getSlots(i);
-    const gymSlot = slots.find(s => s.id === 'gym');
-    
-    let status = 0; // 0 - не было, 1 - пропущено, 2 - выполнено
-    if(this.state.schedule[i].gym && gymSlot){
-      const key = `${dayDate}-${gymSlot.id}-${slots.indexOf(gymSlot)}`;
-      if(this.isPast(gymSlot, i)){
-        status = this.state.skipped[key] ? 1 : 2;
+renderAnalytics() {
+  const stats = {
+    supplements: {taken: 0, missed: 0, days: {}},
+    gym: {done: 0, missed: 0, days: {}},
+    course: {done: 0, missed: 0, days: {}}
+  };
+
+  for (let day = 0; day < 7; day++) {
+    const dayDate = this.getDateKey(day);
+    const dayName = this.days[day];
+    stats.supplements.days[dayName] = [];
+    stats.gym.days[dayName] = [];
+    stats.course.days[dayName] = [];
+
+    const slots = this.getSlots(day);
+
+    slots.forEach((slot, i) => {
+      // Спортпит
+      if (slot.supps) {
+        slot.supps.forEach((s, si) => {
+          const key = `${dayDate}-${slot.id}-${i}-s${si}`;
+          if (this.state.supplements[key]) {
+            stats.supplements.taken++;
+            stats.supplements.days[dayName].push({supp: s, status: 'taken'});
+          } else {
+            stats.supplements.missed++;
+            stats.supplements.days[dayName].push({supp: s, status: 'missed'});
+          }
+        });
       }
-    }
-    
-    dailyGym.push({day: this.days[i], status});
+
+      // Тренировка
+      if (slot.id === 'gym') {
+        const key = `${dayDate}-${slot.id}-${i}`;
+        if (!this.state.skipped[key]) {
+          stats.gym.done++;
+          stats.gym.days[dayName].push('done');
+        } else {
+          stats.gym.missed++;
+          stats.gym.days[dayName].push('missed');
+        }
+      }
+
+      // Курс
+      if (slot.id === 'course') {
+        const key = `${dayDate}-${slot.id}-${i}`;
+        if (!this.state.skipped[key]) {
+          stats.course.done++;
+          stats.course.days[dayName].push('done');
+        } else {
+          stats.course.missed++;
+          stats.course.days[dayName].push('missed');
+        }
+      }
+    });
   }
-  
-  const maxHeight = 80;
-  
+
+  const renderDays = (category) => {
+    return this.days.map(d => {
+      let content = '';
+      if (category === 'supplements') {
+        stats.supplements.days[d].forEach(s => {
+          content += `<span style="color:${s.status==='taken'?'#34C759':'#FF3B30'}">${s.supp}</span> `;
+        });
+      } else if (category === 'gym') {
+        stats.gym.days[d].forEach(s => {
+          content += `<span style="color:${s==='done'?'#34C759':'#FF3B30'}">${s==='done'?'✔':'✖'}</span> `;
+        });
+      } else if (category === 'course') {
+        stats.course.days[d].forEach(s => {
+          content += `<span style="color:${s==='done'?'#34C759':'#FF3B30'}">${s==='done'?'✔':'✖'}</span> `;
+        });
+      }
+      return `<div class="flex justify-between"><span>${d}</span><span>${content}</span></div>`;
+    }).join('');
+  };
+
   return `
-    <div class="card p-6 mb-4">
-      <h2 class="text-xl font-bold mb-4" style="color:#1C1C1E;">📊 Тренды</h2>
-      
-      <div class="mb-6">
-        <p class="text-sm text-gray-600 mb-3">Посещаемость зала</p>
-        <div class="flex items-end justify-between gap-2" style="height:100px;">
-          ${dailyGym.map(d => {
-            const height = d.status === 2 ? maxHeight : (d.status === 1 ? maxHeight * 0.3 : 10);
-            const color = d.status === 2 ? '#34C759' : (d.status === 1 ? '#FF3B30' : '#E5E5EA');
-            return `
-              <div class="flex-1 flex flex-col items-center gap-1">
-                <div class="chart-bar w-full rounded-t-lg transition-all" 
-                     style="height:${height}px; background:${color};"></div>
-                <span class="text-xs text-gray-500">${d.day}</span>
-              </div>
-            `;
-          }).join('')}
+    <div class="space-y-4">
+      <!-- Спортпит -->
+      <div class="card p-4">
+        <h2 class="font-bold text-lg mb-2">💊 Спортпит</h2>
+        <p>Принято: ${stats.supplements.taken}</p>
+        <p>Пропущено: ${stats.supplements.missed}</p>
+        <div class="mt-2 text-sm">
+          ${renderDays('supplements')}
         </div>
       </div>
-      
-      <div class="flex gap-2 text-xs">
-        <div class="flex items-center gap-1">
-          <div class="w-3 h-3 rounded" style="background:#34C759;"></div>
-          <span>Выполнено</span>
+
+      <!-- Тренировки -->
+      <div class="card p-4">
+        <h2 class="font-bold text-lg mb-2">🏋️ Тренировки</h2>
+        <p>Выполнено: ${stats.gym.done}</p>
+        <p>Пропущено: ${stats.gym.missed}</p>
+        <div class="mt-2 text-sm">
+          ${renderDays('gym')}
         </div>
-        <div class="flex items-center gap-1">
-          <div class="w-3 h-3 rounded" style="background:#FF3B30;"></div>
-          <span>Пропущено</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <div class="w-3 h-3 rounded" style="background:#E5E5EA;"></div>
-          <span>Не было</span>
+      </div>
+
+      <!-- Курс -->
+      <div class="card p-4">
+        <h2 class="font-bold text-lg mb-2">📚 Курс</h2>
+        <p>Выполнено: ${stats.course.done}</p>
+        <p>Пропущено: ${stats.course.missed}</p>
+        <div class="mt-2 text-sm">
+          ${renderDays('course')}
         </div>
       </div>
     </div>
-    
-    <div class="card p-6 mb-4">
-      <h2 class="text-xl font-bold mb-4" style="color:#1C1C1E;">💡 Insights</h2>
-      
-      <div class="space-y-3">
-        ${stats.gym.completed > 0 ? `
-          <div class="p-4 rounded-xl" style="background:#F0FDF4;">
-            <p class="text-sm">
-              <span class="font-bold trend-up">Отлично!</span> 
-              Ты сходил в зал <span class="font-bold">${stats.gym.completed}</span> раз на этой неделе
-            </p>
-          </div>
-        ` : ''}
-        
-        ${stats.supplements.completed > stats.supplements.total * 0.8 ? `
-          <div class="p-4 rounded-xl" style="background:#F0F9FF;">
-            <p class="text-sm">
-              <span class="font-bold" style="color:#007AFF;">Молодец!</span> 
-              Регулярный прием спортпита помогает прогрессу
-            </p>
-          </div>
-        ` : ''}
-        
-        ${stats.work.completed === stats.work.total && stats.work.total > 0 ? `
-          <div class="p-4 rounded-xl" style="background:#FFF7ED;">
-            <p class="text-sm">
-              <span class="font-bold" style="color:#FF9500;">💪 Продуктивность 100%!</span> 
-              Ты не пропустил ни одного рабочего дня
-            </p>
-          </div>
-        ` : ''}
-      </div>
-    </div>
-       ${this.renderSuppAnalytics()}
-    `;
-} // ← закрывает renderAnalytics()
+  `;
+}
 
 } // ← закрывает class Planner
 
