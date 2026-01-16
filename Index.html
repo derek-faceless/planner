@@ -1156,7 +1156,7 @@ renderAnalytics() {
 
     slots.forEach((slot, i) => {
       // Спортпит
-      if (slot.supps) {
+      if (slot.supps && this.isPast(slot, day)) {
         slot.supps.forEach((s, si) => {
           const key = `${dayDate}-${slot.id}-${i}-s${si}`;
           if (this.state.supplements[key]) {
@@ -1170,7 +1170,7 @@ renderAnalytics() {
       }
 
       // Тренировка
-      if (slot.id === 'gym') {
+      if (slot.id === 'gym' && this.isPast(slot, day)) {
         const key = `${dayDate}-${slot.id}-${i}`;
         if (!this.state.skipped[key]) {
           stats.gym.done++;
@@ -1182,7 +1182,7 @@ renderAnalytics() {
       }
 
       // Курс
-      if (slot.id === 'course') {
+      if (slot.id === 'course' && this.isPast(slot, day)) {
         const key = `${dayDate}-${slot.id}-${i}`;
         if (!this.state.skipped[key]) {
           stats.course.done++;
