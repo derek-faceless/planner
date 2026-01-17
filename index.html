@@ -282,21 +282,22 @@
   /* Горизонтальный скролл для блоков по дням */
   .scroll-container {
     display: flex;
-    gap: 0.75rem; /* как gap-3 */
+    gap: 0.75rem;
     overflow-x: auto;
-    padding: 0.5rem; /* py-2 */
+    overflow-y: hidden;
+    padding-left: calc(50vw - 60px);   /* центрирование */
+    padding-right: calc(50vw - 60px);
     scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch; /* плавный скролл на iOS */
-    margin-left: -0.5rem; /* компенсируем padding */
-    margin-right: -0.5rem;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pan-x;
   }
-  
+
   .scroll-item {
-    min-width: 120px; /* ширина карточки дня */
+    min-width: 120px;
     flex-shrink: 0;
     background: white;
-    border-radius: 0.75rem; /* rounded-xl */
-    padding: 0.75rem; /* p-3 */
+    border-radius: 0.75rem;
+    padding: 0.75rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     scroll-snap-align: center;
   }
@@ -306,7 +307,25 @@
       min-width: 100px;
       padding: 0.5rem;
     }
+    .scroll-container {
+      padding-left: calc(50vw - 50px);
+      padding-right: calc(50vw - 50px);
+    }
   }
+  @media (max-width: 360px) {
+    .scroll-item {
+      min-width: 100px;
+      padding: 0.5rem;
+    }
+  }
+  .scroll-item.today {
+    position: relative;             /* для безопасного z-index */
+    z-index: 1;                     /* рамка сверху */
+    outline: 3px solid #3B82F6;     /* Tailwind blue-500 */
+    outline-offset: -4px;           /* рамка внутрь элемента */
+    border-radius: 0.75rem;         /* совпадает с scroll-item */
+  }
+
 </style>
 </head>
 
@@ -999,7 +1018,6 @@ setupSwipe(){
     const dx = e.changedTouches[0].clientX - this.touchStartX;
     const dy = e.changedTouches[0].clientY - this.touchStartY;
     
-    // Свайп работает только на вкладке расписания
     if(this.state.currentTab === 'schedule' && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)){
       haptic.light();
       const newDay = this.state.selectedDay + (dx < 0 ? 1 : -1);
@@ -1287,7 +1305,7 @@ renderAnalytics() {
         const items = stats.supplements.days[d];
         return `
           <div 
-            class="scroll-item ${d === todayName ? 'ring-2 ring-blue-500' : ''}"
+            class="scroll-item ${d === todayName ? 'today' : ''}"
             ${d === todayName ? 'data-today="true"' : ''}>
 
             <div class="text-center font-bold text-sm mb-2">${d}</div>
@@ -1327,5 +1345,82 @@ renderAnalytics() {
 // Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
   new Planner();
+  
+  // Горизонтальные скроллы: умное определение направления свайпа
+  setTimeout(() => {
+    const scrollContainers = document.querySelectorAll('.scroll-container');
+    scrollContainers.forEach(container => {
+      let startX = 0;
+      let startY = 0;
+      let scrollStart = 0;
+      let isHorizontalSwipe = false;
+
+      container.addEventListener('touchstart', e => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        scrollStart = container.scrollLeft;
+        isHorizontalSwipe = false;
+      }, {passive: true});
+
+      container.addEventListener('touchmove', e => {
+        const deltaX = Math.abs(e.touches[0].clientX - startX);
+        const deltaY = Math.abs(e.touches[0].clientY - startY);
+
+        // Определяем направление при первом движении
+        if (!isHorizontalSwipe && (deltaX > 10 || deltaY > 10)) {
+          isHorizontalSwipe = deltaX > deltaY;
+        }
+
+        // Если вертикальный свайп - разрешаем прокрутку страницы
+        if (!isHorizontalSwipe && deltaY > deltaX) {
+          return;
+        }
+
+        // Если горизонтальный - предотвращаем вертикальную прокрутку
+        if (isHorizontalSwipe) {
+          e.stopPropagation();
+        }
+      }, {passive: true});
+
+      container.addEventListener('touchend', e => {
+        if (!isHorizontalSwipe) return;
+
+        const items = Array.from(container.querySelectorAll('.scroll-item'));
+        if (!items.length) return;
+
+        const containerCenter = container.scrollLeft + container.offsetWidth / 2;
+
+        // ищем ближайший элемент к центру
+        let closest = items[0];
+        let minDist = Math.abs((closest.offsetLeft + closest.offsetWidth / 2) - containerCenter);
+
+        items.forEach(item => {
+          const itemCenter = item.offsetLeft + item.offsetWidth / 2;
+          const dist = Math.abs(itemCenter - containerCenter);
+          if (dist < minDist) {
+            closest = item;
+            minDist = dist;
+          }
+        });
+
+        // плавно центрируем
+        closest.scrollIntoView({
+          behavior: 'smooth',
+          inline: 'center',
+          block: 'nearest'
+        });
+      }, {passive: true});
+
+      // при рендере аналитики сразу центрируем текущий день
+      setTimeout(() => {
+        const todayEl = container.querySelector('.scroll-item[data-today="true"]');
+        if (todayEl) {
+          todayEl.scrollIntoView({behavior: 'smooth', inline: 'center', block: 'nearest'});
+        }
+      }, 50);
+    });
+  }, 100);
 });
 </script>
+</body>
+</html>
