@@ -104,6 +104,11 @@
     transform: scale(1.2);
     opacity: 0.85;
   }
+  .progress-bar-fill {
+    height: 8px;
+    border-radius: 4px;
+    transition: width 0.5s ease-out;
+}
 
   /* Счётчик X из Y */
   .supp-counter {
@@ -1132,6 +1137,7 @@ scrollToCurrent(){
 }
 
 renderAnalytics() {
+  // 1️⃣ Подсчёт статистики
   const stats = {
     supplements: {taken: 0, missed: 0, days: {}},
     gym: {done: 0, missed: 0, days: {}},
@@ -1141,6 +1147,7 @@ renderAnalytics() {
   for (let day = 0; day < 7; day++) {
     const dayDate = this.getDateKey(day);
     const dayName = this.days[day];
+
     stats.supplements.days[dayName] = [];
     stats.gym.days[dayName] = [];
     stats.course.days[dayName] = [];
@@ -1149,7 +1156,7 @@ renderAnalytics() {
 
     slots.forEach((slot, i) => {
       // Спортпит
-      if (slot.supps) {
+      if (slot.supps && this.isPast(slot, day)) {
         slot.supps.forEach((s, si) => {
           const key = `${dayDate}-${slot.id}-${i}-s${si}`;
           if (this.state.supplements[key]) {
@@ -1163,7 +1170,7 @@ renderAnalytics() {
       }
 
       // Тренировка
-      if (slot.id === 'gym') {
+      if (slot.id === 'gym' && this.isPast(slot, day)) {
         const key = `${dayDate}-${slot.id}-${i}`;
         if (!this.state.skipped[key]) {
           stats.gym.done++;
@@ -1175,7 +1182,7 @@ renderAnalytics() {
       }
 
       // Курс
-      if (slot.id === 'course') {
+      if (slot.id === 'course' && this.isPast(slot, day)) {
         const key = `${dayDate}-${slot.id}-${i}`;
         if (!this.state.skipped[key]) {
           stats.course.done++;
@@ -1188,57 +1195,53 @@ renderAnalytics() {
     });
   }
 
+  // 2️⃣ Функция для рендеринга дней с индикаторами
   const renderDays = (category) => {
     return this.days.map(d => {
       let content = '';
       if (category === 'supplements') {
         stats.supplements.days[d].forEach(s => {
-          content += `<span style="color:${s.status==='taken'?'#34C759':'#FF3B30'}">${s.supp}</span> `;
+          content += `<span style="color:${s.status==='taken'?'#34C759':'#FF3B30'}; margin-right:4px;">${s.supp}</span>`;
         });
       } else if (category === 'gym') {
         stats.gym.days[d].forEach(s => {
-          content += `<span style="color:${s==='done'?'#34C759':'#FF3B30'}">${s==='done'?'✔':'✖'}</span> `;
+          content += `<span style="color:${s==='done'?'#34C759':'#FF3B30'}; margin-right:4px;">${s==='done'?'✔':'✖'}</span>`;
         });
       } else if (category === 'course') {
         stats.course.days[d].forEach(s => {
-          content += `<span style="color:${s==='done'?'#34C759':'#FF3B30'}">${s==='done'?'✔':'✖'}</span> `;
+          content += `<span style="color:${s==='done'?'#007AFF':'#FF3B30'}; margin-right:4px;">${s==='done'?'✔':'✖'}</span>`;
         });
       }
-      return `<div class="flex justify-between"><span>${d}</span><span>${content}</span></div>`;
+      return `<div class="flex justify-between mb-1"><span>${d}</span><span>${content}</span></div>`;
     }).join('');
   };
 
+  // 3️⃣ Генерация HTML карточек с прогресс-барами
+  const cardTemplate = (title, done, missed, color, category) => {
+    const total = done + missed;
+    const percent = total ? Math.round((done / total) * 100) : 0;
+    return `
+      <div class="card stats-card p-4">
+        <h2 class="font-bold text-lg mb-2">${title}</h2>
+        <div class="flex justify-between mb-2">
+          <span>Выполнено: ${done}</span>
+          <span>Пропущено: ${missed}</span>
+        </div>
+        <div class="progress-bar-bg mb-2">
+          <div class="progress-bar-fill" style="width: ${percent}%; background: ${color};"></div>
+        </div>
+        <div class="text-sm">
+          ${renderDays(category)}
+        </div>
+      </div>
+    `;
+  };
+
   return `
-    <div class="space-y-4">
-      <!-- Спортпит -->
-      <div class="card p-4">
-        <h2 class="font-bold text-lg mb-2">💊 Спортпит</h2>
-        <p>Принято: ${stats.supplements.taken}</p>
-        <p>Пропущено: ${stats.supplements.missed}</p>
-        <div class="mt-2 text-sm">
-          ${renderDays('supplements')}
-        </div>
-      </div>
-
-      <!-- Тренировки -->
-      <div class="card p-4">
-        <h2 class="font-bold text-lg mb-2">🏋️ Тренировки</h2>
-        <p>Выполнено: ${stats.gym.done}</p>
-        <p>Пропущено: ${stats.gym.missed}</p>
-        <div class="mt-2 text-sm">
-          ${renderDays('gym')}
-        </div>
-      </div>
-
-      <!-- Курс -->
-      <div class="card p-4">
-        <h2 class="font-bold text-lg mb-2">📚 Курс</h2>
-        <p>Выполнено: ${stats.course.done}</p>
-        <p>Пропущено: ${stats.course.missed}</p>
-        <div class="mt-2 text-sm">
-          ${renderDays('course')}
-        </div>
-      </div>
+    <div class="space-y-4 px-4 pb-4">
+      ${cardTemplate('💊 Спортпит', stats.supplements.taken, stats.supplements.missed, '#34C759', 'supplements')}
+      ${cardTemplate('🏋️ Тренировки', stats.gym.done, stats.gym.missed, '#FF3B30', 'gym')}
+      ${cardTemplate('📚 Курс', stats.course.done, stats.course.missed, '#007AFF', 'course')}
     </div>
   `;
 }
