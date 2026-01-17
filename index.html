@@ -279,6 +279,34 @@
   .chart-bar {
     transition: height 0.5s ease-out;
   }
+  /* Горизонтальный скролл для блоков по дням */
+  .scroll-container {
+    display: flex;
+    gap: 0.75rem; /* как gap-3 */
+    overflow-x: auto;
+    padding: 0.5rem; /* py-2 */
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch; /* плавный скролл на iOS */
+    margin-left: -0.5rem; /* компенсируем padding */
+    margin-right: -0.5rem;
+  }
+  
+  .scroll-item {
+    min-width: 120px; /* ширина карточки дня */
+    flex-shrink: 0;
+    background: white;
+    border-radius: 0.75rem; /* rounded-xl */
+    padding: 0.75rem; /* p-3 */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    scroll-snap-align: center;
+  }
+
+  @media (max-width: 360px) {
+    .scroll-item {
+      min-width: 100px;
+      padding: 0.5rem;
+    }
+  }
 </style>
 </head>
 
@@ -859,6 +887,19 @@ render(){
     this.state.currentTab === 'schedule'
       ? this.renderSchedule()
       : `${this.renderActivityRings()}${this.renderAnalytics()}`;
+    if (this.state.currentTab === 'analytics') {
+  setTimeout(() => {
+    const todayEl = content.querySelector('[data-today="true"]');
+    if (todayEl) {
+      todayEl.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest'
+      });
+    }
+  }, 50);
+}
+
 
   app.appendChild(content);
 
@@ -1236,10 +1277,45 @@ renderAnalytics() {
       </div>
     `;
   };
+  const renderSuppDaysHorizontal = () => {
+  const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const todayName = this.days[todayIndex];
+
+  return `
+    <div class="scroll-container">
+      ${this.days.map(d => {
+        const items = stats.supplements.days[d];
+        return `
+          <div 
+            class="scroll-item ${d === todayName ? 'ring-2 ring-blue-500' : ''}"
+            ${d === todayName ? 'data-today="true"' : ''}>
+
+            <div class="text-center font-bold text-sm mb-2">${d}</div>
+
+            ${
+              items.length
+                ? items.map(i => `
+                    <div class="flex items-center gap-1 text-sm mb-1 truncate"
+                         style="color:${i.status === 'taken' ? '#34C759' : '#FF3B30'}">
+                      <span>${i.status === 'taken' ? '✅' : '❌'}</span>
+                      <span class="truncate">${i.supp}</span>
+                    </div>
+                  `).join('')
+                : `<div class="text-center text-gray-400 text-sm">—</div>`
+            }
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+};
 
   return `
     <div class="space-y-4 px-4 pb-4">
-      ${cardTemplate('💊 Спортпит', stats.supplements.taken, stats.supplements.missed, '#34C759', 'supplements')}
+      <div class="card p-4">
+        <h2 class="font-bold text-lg mb-3">💊 Спортпит по дням</h2>
+        ${renderSuppDaysHorizontal()}
+      </div>
       ${cardTemplate('🏋️ Тренировки', stats.gym.done, stats.gym.missed, '#FF3B30', 'gym')}
       ${cardTemplate('📚 Курс', stats.course.done, stats.course.missed, '#007AFF', 'course')}
     </div>
