@@ -375,8 +375,8 @@ constructor(){
     supplements: storage.get('supplements') ?? {},
     notifications: storage.get('notifications') || true,
     lastNotification: storage.get('lastNotification') || null,
-    suppNotifications: storage.get('suppNotifications') || {}
-
+    suppNotifications: storage.get('suppNotifications') || {},
+    _lastSuppDay: storage.get('_lastSuppDay') || null,
   };
 
   this.colors={
@@ -408,6 +408,8 @@ save(){
   storage.set('supplements',this.state.supplements);
   storage.set('notifications',this.state.notifications);
   storage.set('lastNotification',this.state.lastNotification);
+  storage.set('suppNotifications', this.state.suppNotifications); // ✅
+  storage.set('_lastSuppDay', this.state._lastSuppDay);           // ✅
 }
 
 getDateForDay(i){
@@ -471,39 +473,73 @@ checkNotifications(){
 
 checkSuppReminders() {
   const now = new Date();
-  const dayIndex = this.state.selectedDay;
+  const dayIndex = now.getDay() === 0 ? 6 : now.getDay() - 1;
   const dayDate = this.getDateKey(dayIndex);
+
+  // ===== 1️⃣ Сброс уведомлений каждый день =====
+  if (this.state._lastSuppDay !== dayDate) {
+    this.state.suppNotifications = {};
+    this.state._lastSuppDay = dayDate;
+    this.save();
+  }
+
   const slots = this.getSlots(dayIndex);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   slots.forEach((slot, i) => {
-    if (!slot.supps) return;
+    if (!slot.supps || !slot.t.includes('-')) return;
+
+    const [startTime] = slot.t.split('-');
+    const [h, m] = startTime.split(':').map(Number);
+    const slotMinutes = h * 60 + m;
 
     slot.supps.forEach((supp, si) => {
       const key = `${dayDate}-${slot.id}-${i}-s${si}`;
-      const suppState = this.state.supplements[key];
+      const suppTaken = this.state.supplements[key];
 
-      // Время начала слота
-      const [startTime] = slot.t.split('-');
-      const [h, m] = startTime.split(':').map(Number);
-      const slotMinutes = h * 60 + m;
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-      // Напоминание за 5 минут
-      if (nowMinutes >= slotMinutes - 5 && nowMinutes < slotMinutes && !suppState) {
-        if (!this.state.suppNotifications[key]?.notified) {
-          this.showNotification(`💊 Приём: ${supp} через 5 минут`);
-          this.state.suppNotifications[key] = { notified: true, taken: false };
-          this.save();
-        }
+      // ===== Инициализация состояния напоминаний =====
+      if (!this.state.suppNotifications[key]) {
+        this.state.suppNotifications[key] = {
+          notified: false,      // напоминание "через 5 мин"
+          taken: false,         // отмечено пользователем
+          missed: false,        // пометка пропущено
+          missedNotified: false // уведомление "пропущено"
+        };
       }
 
-      // Пропущено
-      if (nowMinutes > slotMinutes + 15 && !suppState) {
-        if (!this.state.suppNotifications[key]?.taken) {
-          this.showNotification(`⚠️ Пропущено: ${supp}`);
-          this.state.suppNotifications[key] = { notified: true, taken: false };
-          this.save();
-        }
+      const notifState = this.state.suppNotifications[key];
+
+      // ===== Напоминание за 5 минут до =====
+      if (
+        nowMinutes >= slotMinutes - 5 &&
+        nowMinutes <= slotMinutes - 1 && // окно 4 мин
+        !notifState.notified &&
+        !suppTaken
+      ) {
+        this.showNotification(`💊 Скоро приём: ${supp}`);
+        notifState.notified = true;
+        this.save();
+      }
+
+      // ===== Пропущено через 15 минут после времени =====
+      if (
+        nowMinutes >= slotMinutes + 15 &&
+        !suppTaken &&
+        !notifState.missedNotified &&
+        !notifState.taken
+      ) {
+        this.showNotification(`⚠️ Пропущено: ${supp}`);
+        notifState.missed = true;
+        notifState.missedNotified = true;
+        this.save();
+      }
+
+      // ===== Пользователь отметил как принято =====
+      if (suppTaken && !notifState.taken) {
+        notifState.taken = true;
+        notifState.missed = false;
+        notifState.missedNotified = false;
+        this.save();
       }
     });
   });
@@ -986,6 +1022,8 @@ document.querySelectorAll('[data-supp]').forEach(btn=>{
     // Если есть запись о напоминании — отмечаем как взятую
     if(this.state.suppNotifications[k]){
       this.state.suppNotifications[k].taken = this.state.supplements[k];
+      this.state.suppNotifications[k].missed = false;
+      this.state.suppNotifications[k].missedNotified = false;
     }
 
     this.save();
