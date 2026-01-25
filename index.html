@@ -411,19 +411,31 @@ save(){
 }
 
 getDateForDay(i){
-  const t=new Date();
-  const m=new Date(t);
-  m.setDate(t.getDate()-t.getDay()+1+i);
+  const t = new Date();
+  const m = new Date(t);
+
+  const jsDay = t.getDay();                 // 0..6 (вс..сб)
+  const mondayIndex = jsDay === 0 ? 6 : jsDay - 1; // 0..6 (пн..вс)
+
+  m.setDate(t.getDate() - mondayIndex + i);
+
   const months=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
   return `${m.getDate()} ${months[m.getMonth()]}`;
 }
 
+
 getDateKey(i){
-  const t=new Date();
-  const m=new Date(t);
-  m.setDate(t.getDate()-t.getDay()+1+i);
+  const t = new Date();
+  const m = new Date(t);
+
+  const jsDay = t.getDay();
+  const mondayIndex = jsDay === 0 ? 6 : jsDay - 1;
+
+  m.setDate(t.getDate() - mondayIndex + i);
+
   return m.toISOString().split('T')[0];
 }
+
 
 toMin(t){
   const[h,m]=t.split(':').map(Number);
